@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 export default function Home() {
   return (
     <div className="
@@ -24,8 +26,8 @@ export default function Home() {
       </p>
 
       <div className="mt-10 flex gap-4">
-        <a
-          href="/login"
+        <Link
+          to="/login"
           className="
             px-8 py-3 rounded-2xl text-lg
             bg-cyan-500/20 border border-cyan-500/40
@@ -34,10 +36,10 @@ export default function Home() {
           "
         >
           Get Started →
-        </a>
+        </Link>
 
-        <a
-          href="/register"
+        <Link
+          to="/register"
           className="
             px-8 py-3 rounded-2xl text-lg
             bg-purple-600/20 border border-purple-500/40
@@ -46,7 +48,7 @@ export default function Home() {
           "
         >
           Create Account
-        </a>
+        </Link>
       </div>
 
       {/* FEATURES SECTION */}
