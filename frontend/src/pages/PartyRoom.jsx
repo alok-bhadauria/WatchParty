@@ -12,7 +12,7 @@ import WindowPanel from "../components/WindowPanel";
 import MobileToolbar from "../components/MobileToolbar";
 
 import toast from "react-hot-toast";
-import { leaveParticipant } from "../api/participantAPI";
+import { joinParticipant, leaveParticipant } from "../api/participantAPI";
 
 export default function PartyRoom() {
   const navigate = useNavigate();
@@ -24,6 +24,9 @@ export default function PartyRoom() {
   const party = state?.party;
   const participant = state?.participant;
 
+  // This will hold the participant document returned by the backend (with _id)
+  const [dbParticipant, setDbParticipant] = useState(null);
+
   const [participants, setParticipants] = useState([]);
   const [view, setView] = useState("video"); // "video" | "whiteboard"
   const [mobilePanel, setMobilePanel] = useState("chat"); // "av" | "chat" | "participants"
@@ -31,19 +34,49 @@ export default function PartyRoom() {
   const isMobile =
     typeof window !== "undefined" ? window.innerWidth < 768 : false;
 
-  // JOIN ROOM + LISTEN
+
+  // Ensure we have a participant document in DB (with _id)
   useEffect(() => {
     if (!party || !participant) {
       navigate("/parties");
       return;
     }
 
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await joinParticipant({
+          partyId: party._id,
+          displayName: participant.displayName || "Guest",
+          avatar: participant.avatar || "",
+          isAnonymous: participant.isAnonymous ?? true,
+        });
+
+        if (!cancelled) {
+          setDbParticipant(res.data.participant); // has _id
+        }
+      } catch (err) {
+        toast.error("Could not join party");
+        navigate("/parties");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [party, participant, navigate]);
+
+
+  // JOIN ROOM + LISTEN (Socket) — after we have dbParticipant from backend
+  useEffect(() => {
+    if (!party || !dbParticipant) return;
     if (!socket) return;
 
     socket.emit("join-room", {
       partyId: party._id,
-      participantId: participant._id,
-      displayName: participant.displayName,
+      participantId: dbParticipant._id,
+      displayName: dbParticipant.displayName,
     });
 
     const handleParticipants = (list) => {
@@ -55,18 +88,21 @@ export default function PartyRoom() {
     return () => {
       socket.emit("leave-room", {
         partyId: party._id,
-        participantId: participant._id,
+        participantId: dbParticipant._id,
       });
 
-      leaveParticipant(participant._id).catch(() => {});
+      leaveParticipant(dbParticipant._id).catch(() => {});
 
       socket.off("participants-update", handleParticipants);
     };
-  }, [socket, party, participant, navigate]);
+  }, [socket, party, dbParticipant]);
+
 
   const leaveRoom = async () => {
     try {
-      await leaveParticipant(participant._id);
+      if (dbParticipant?._id) {
+        await leaveParticipant(dbParticipant._id);
+      }
     } catch {}
     toast("You left the party");
     navigate("/parties");
@@ -81,7 +117,7 @@ export default function PartyRoom() {
     }
   };
 
-  if (!party || !participant) {
+  if (!party || !dbParticipant) {
     return (
       <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-[#000] via-[#0a0f1f] to-[#1b0f2f]">
         Loading...
@@ -109,7 +145,7 @@ export default function PartyRoom() {
               {/* Media Area */}
               <div className="flex-1 min-h-0 relative overflow-hidden pb-10">
                 {view === "video" ? (
-                  <VideoPlayer party={party} participant={participant} />
+                  <VideoPlayer party={party} participant={dbParticipant} />
                 ) : (
                   <Whiteboard partyId={party._id} />
                 )}
@@ -162,7 +198,7 @@ export default function PartyRoom() {
             <div className="rounded-2xl flex flex-col overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
               <ChatBox
                 partyId={party._id}
-                participant={participant}
+                participant={dbParticipant}
                 partyName={party.name}
               />
             </div>
@@ -192,7 +228,7 @@ export default function PartyRoom() {
           <div className="flex-1 min-h-0 flex flex-col">
             <div className="flex-1 min-h-0 pb-2">
               {view === "video" ? (
-                <VideoPlayer party={party} participant={participant} />
+                <VideoPlayer party={party} participant={dbParticipant} />
               ) : (
                 <Whiteboard partyId={party._id} />
               )}
@@ -253,7 +289,7 @@ export default function PartyRoom() {
               ) : mobilePanel === "chat" ? (
                 <ChatBox
                   partyId={party._id}
-                  participant={participant}
+                  participant={dbParticipant}
                   partyName={party.name}
                   compact
                 />
