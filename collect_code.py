@@ -46,7 +46,7 @@ FILES_NEEDED = {
         "App.jsx", "index.css", "main.jsx"
     ],
     "frontend": [
-        "index.html", "package.json"
+        "index.html", "package.json", ".env"
     ]
 }
 

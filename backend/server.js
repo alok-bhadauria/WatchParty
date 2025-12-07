@@ -26,10 +26,23 @@ const feedbackRoutes = require('./routes/feedbackRoutes');
 const app = express();
 
 // Basic middleware
-app.use(cors({
-  origin: 'http://localhost:5173',
-  credentials: false,
-}));
+const allowedOrigins = [
+  process.env.CLIENT_URL,         // Render frontend URL
+  "http://localhost:5173",        // dev mode
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // mobile apps / curl / same machine
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("CORS not allowed for this origin: " + origin), false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -41,6 +54,11 @@ if (morgan) {
     next();
   });
 }
+
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true });
+});
+
 
 // Health check
 app.get('/', (req, res) =>
@@ -63,11 +81,16 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:5173',
-    methods: ['GET', 'POST'],
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error("Socket CORS blocked: " + origin), false);
+    },
+    methods: ["GET", "POST"],
+    credentials: true,
   },
+  transports: ["websocket", "polling"],
 });
-
 // Init socket logic
 require('./socket/socketServer')(io);
 

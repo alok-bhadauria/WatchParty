@@ -7,8 +7,10 @@ export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    const s = io("http://localhost:5000", {
-      transports: ["websocket"],
+    const socketURL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+
+    const s = io(socketURL, {
+      transports: ["websocket", "polling"],
     });
 
     setSocket(s);

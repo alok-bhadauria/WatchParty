@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
+import { useEffect } from "react";
 
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -17,6 +18,20 @@ import FeedbackPage from "./pages/Feedback";
 
 
 export default function App() {
+
+  useEffect(() => {
+    // Wake the backend automatically
+    const wakeUp = async () => {
+      try {
+        await fetch(`${import.meta.env.VITE_API_URL}/health`);
+      } catch (err) {
+        console.log("Wake-up failed (expected if backend still sleeping)");
+      }
+    };
+
+    wakeUp();
+  }, []);
+
   return (
     <BrowserRouter>
       {/* Global Navbar */}
