@@ -1,0 +1,5332 @@
+BACKEND:
+
+backend/models:
+
+Feedback.js
+const mongoose = require('mongoose');
+
+const FeedbackSchema = new mongoose.Schema(
+  {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    message: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5,
+      default: 5
+    }
+  },
+  {
+    timestamps: { createdAt: true, updatedAt: false }
+  }
+);
+
+module.exports = mongoose.model('Feedback', FeedbackSchema, 'feedbacks');
+
+
+
+MediaState.js
+const mongoose = require('mongoose');
+
+const MediaStateSchema = new mongoose.Schema(
+  {
+    party: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Party',
+      required: true,
+      unique: true,
+      index: true
+    },
+    videoUrl: {
+      type: String,
+      default: ''
+    },
+    provider: {
+      type: String,
+      enum: ['youtube', 'direct', 'drive', 'other'],
+      default: 'other'
+    },
+    currentTime: {
+      type: Number,
+      default: 0
+    },
+    isPlaying: {
+      type: Boolean,
+      default: false
+    },
+    playbackRate: {
+      type: Number,
+      default: 1
+    },
+    volume: {
+      type: Number,
+      default: 1
+    },
+    lastUpdated: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  {
+    timestamps: false
+  }
+);
+
+module.exports = mongoose.model('MediaState', MediaStateSchema, 'media_states');
+
+
+
+Message.js
+const mongoose = require('mongoose');
+
+const MessageSchema = new mongoose.Schema(
+  {
+    party: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Party',
+      required: true,
+      index: true
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    senderName: {
+      type: String,
+      default: 'Anonymous',
+      trim: true
+    },
+    content: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    type: {
+      type: String,
+      enum: ['text', 'system'],
+      default: 'text'
+    }
+  },
+  {
+    timestamps: { createdAt: true, updatedAt: false }
+  }
+);
+
+MessageSchema.index({ party: 1, createdAt: 1 });
+
+module.exports = mongoose.model('Message', MessageSchema, 'messages');
+
+
+
+Participant.js
+const mongoose = require('mongoose');
+
+const ParticipantSchema = new mongoose.Schema(
+  {
+    party: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Party',
+      required: true,
+      index: true
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null // null for anonymous guests
+    },
+    displayName: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    avatar: {
+      type: String,
+      default: ''
+    },
+    isHost: {
+      type: Boolean,
+      default: false
+    },
+    isAnonymous: {
+      type: Boolean,
+      default: false
+    },
+    isMuted: {
+      type: Boolean,
+      default: false
+    },
+    isVideoOn: {
+      type: Boolean,
+      default: false
+    },
+    isScreenSharing: {
+      type: Boolean,
+      default: false
+    },
+    joinedAt: {
+      type: Date,
+      default: Date.now
+    },
+    lastActiveAt: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  {
+    timestamps: false
+  }
+);
+
+// Avoid duplicate participant per (party, user) (for signed-in)
+ParticipantSchema.index({ party: 1, user: 1 });
+
+module.exports = mongoose.model('Participant', ParticipantSchema, 'participants');
+
+
+
+Party.js
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
+
+const SALT_ROUNDS = 10;
+
+const PartySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String, default: '' },
+
+  host: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+
+  code: { type: String, required: true, unique: true, index: true },
+
+  isPrivate: { type: Boolean, default: false },
+  password: { type: String, default: '' },
+
+  settings: {
+    allowAnonymous: { type: Boolean, default: false },
+    enableChat: { type: Boolean, default: true },
+    enableAudio: { type: Boolean, default: true },
+    enableVideo: { type: Boolean, default: true },
+    enableWhiteboard: { type: Boolean, default: true },
+    theme: { type: String, default: 'default' },
+    maxParticipants: { type: Number, default: 50 }
+  },
+
+  participantsCount: { type: Number, default: 0 },
+
+  isActive: { type: Boolean, default: true },
+
+  lastActive: { type: Date, default: Date.now },
+
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+PartySchema.pre('save', async function (next) {
+  try {
+    // If password changed for private party, hash it
+    if (this.isModified('password') && this.password && this.password.length > 0) {
+      const hash = await bcrypt.hash(this.password, SALT_ROUNDS);
+      this.password = hash;
+    }
+
+    this.updatedAt = Date.now();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+PartySchema.methods.comparePassword = function (candidate) {
+  if (!this.password) return Promise.resolve(false);
+  return bcrypt.compare(candidate, this.password);
+};
+
+module.exports = mongoose.model('Party', PartySchema, 'parties');
+
+
+
+User.js
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
+
+const SALT_ROUNDS = 10;
+
+const UserSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    username: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      lowercase: true,
+      trim: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      lowercase: true,
+      trim: true,
+    },
+    password: {
+      type: String,
+      required: true,
+      minlength: 6,
+    },
+    avatar: {
+      type: String,
+      default: '',
+    },
+    watchName: {
+      type: String,
+      default: '', // used as default display name when joining parties
+      trim: true,
+    }
+  },
+  {
+    timestamps: true
+  }
+);
+
+UserSchema.pre('save', async function (next) {
+  try {
+    if (!this.isModified('password')) return next();
+    const hash = await bcrypt.hash(this.password, SALT_ROUNDS);
+    this.password = hash;
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+UserSchema.methods.comparePassword = function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+module.exports = mongoose.model('User', UserSchema, 'users');
+
+
+
+backend/controllers:
+
+authController.js
+// controllers/authController.js
+
+const jwt = require("jsonwebtoken");
+const User = require("../models/User");
+const { success, error: respError } = require("../utils/responseHandler");
+const { requiredFields } = require("../utils/validators");
+
+// ---------------------------------------------
+// ✅ Use environment-based config (NO config.js)
+// ---------------------------------------------
+const JWT_SECRET = process.env.JWT_SECRET || "changeme-supersecret-key";
+const TOKEN_EXPIRY = "7d";
+
+// Utility: Return a "safe user" object
+function safeUser(u) {
+  return {
+    id: u._id,
+    name: u.name,
+    email: u.email,
+    username: u.username,
+    avatar: u.avatar,
+    watchName: u.watchName
+  };
+}
+
+// ---------------------------------------------
+// REGISTER
+// ---------------------------------------------
+exports.register = async (req, res) => {
+  try {
+    const missing = requiredFields(req.body, [
+      "name",
+      "email",
+      "username",
+      "password",
+    ]);
+    if (missing.length)
+      return respError(
+        res,
+        "Missing required fields: " + missing.join(", "),
+        400
+      );
+
+    const { name, email, username, password, watchName, avatar } = req.body;
+
+    const existing = await User.findOne({
+      $or: [{ email }, { username }],
+    });
+    if (existing)
+      return respError(res, "Email or username already in use", 409);
+
+    const user = new User({
+      name,
+      email,
+      username,
+      password,
+      watchName,
+      avatar,
+    });
+    await user.save();
+
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, {
+      expiresIn: TOKEN_EXPIRY,
+    });
+
+    return success(res, { user: safeUser(user), token }, 201);
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+// ---------------------------------------------
+// LOGIN
+// ---------------------------------------------
+exports.login = async (req, res) => {
+  try {
+    const missing = requiredFields(req.body, ["identifier", "password"]);
+    if (missing.length)
+      return respError(
+        res,
+        "Missing credentials: " + missing.join(", "),
+        400
+      );
+
+    const { identifier, password } = req.body;
+
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { username: identifier }],
+    });
+    if (!user) return respError(res, "Invalid credentials", 401);
+
+    const match = await user.comparePassword(password);
+    if (!match) return respError(res, "Invalid credentials", 401);
+
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, {
+      expiresIn: TOKEN_EXPIRY,
+    });
+
+    return success(res, { user: safeUser(user), token });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+// ---------------------------------------------
+// GET USER
+// ---------------------------------------------
+exports.getUser = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const user = await User.findById(id).select("-password");
+    if (!user) return respError(res, "User not found", 404);
+
+    return success(res, { user });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+// ---------------------------------------------
+// UPDATE USER
+// ---------------------------------------------
+exports.updateUser = async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const updates = { ...req.body };
+    delete updates.password; // prevent password update here
+    updates.updatedAt = Date.now();
+
+    const user = await User.findByIdAndUpdate(id, updates, {
+      new: true,
+    }).select("-password");
+
+    if (!user) return respError(res, "User not found", 404);
+
+    return success(res, { user: safeUser(user) });
+  } catch (err) {
+    if (err.code === 11000) {
+      return respError(res, "Email or username already in use", 409);
+    }
+    return respError(res, err.message, 500);
+  }
+};
+
+// ---------------------------------------------
+// DELETE USER
+// ---------------------------------------------
+exports.deleteUser = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const user = await User.findByIdAndDelete(id);
+    if (!user) return respError(res, "User not found", 404);
+
+    return success(res, {});
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+// ---------------------------------------------
+// CHANGE PASSWORD (AUTH REQUIRED)
+// ---------------------------------------------
+exports.changePassword = async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return respError(res, "Old and new password are required", 400);
+    }
+
+    if (newPassword.length < 6) {
+      return respError(res, "New password must be at least 6 characters", 400);
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return respError(res, "User not found", 404);
+
+    const match = await user.comparePassword(oldPassword);
+    if (!match) return respError(res, "Old password is incorrect", 403);
+
+    user.password = newPassword; // will be hashed by pre('save')
+    await user.save();
+
+    return success(res, { message: "Password updated successfully" });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+
+
+
+feedbackController.js
+const Feedback = require('../models/Feedback');
+const { success, error: respError } = require('../utils/responseHandler');
+const { requiredFields } = require('../utils/validators');
+
+exports.createFeedback = async (req, res) => {
+  try {
+    const missing = requiredFields(req.body, ['message']);
+    if (missing.length) {
+      return respError(res, 'Missing required fields: ' + missing.join(', '), 400);
+    }
+
+    const { message, rating } = req.body;
+    const user = req.user ? req.user._id : null;
+
+    const feedback = await Feedback.create({
+      user,
+      message,
+      rating: rating || 5,
+    });
+
+    return success(res, { feedback }, 201);
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+exports.listFeedback = async (req, res) => {
+  try {
+    const feedbacks = await Feedback.find()
+      .sort({ createdAt: -1 })
+      .limit(200);
+
+    return success(res, { feedbacks });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+exports.deleteFeedback = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const feedback = await Feedback.findById(id);
+    if (!feedback) {
+      return respError(res, 'Not found', 404);
+    }
+
+    // Optionally only allow admins. For now: any logged-in user is blocked from deleting others
+    if (feedback.user && feedback.user.toString() !== req.user._id.toString()) {
+      return respError(res, 'Forbidden', 403);
+    }
+
+    await feedback.deleteOne();
+    return success(res, {});
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+
+
+mediaController.js
+const MediaState = require('../models/MediaState');
+const { success, error: respError } = require('../utils/responseHandler');
+const { requiredFields } = require('../utils/validators');
+
+exports.getMediaState = async (req, res) => {
+  try {
+    const partyId = req.query.partyId || req.params.partyId;
+    if (!partyId) {
+      return respError(res, 'partyId required', 400);
+    }
+
+    let state = await MediaState.findOne({ party: partyId });
+    if (!state) {
+      state = await MediaState.create({ party: partyId });
+    }
+
+    return success(res, { state });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+exports.updateMediaState = async (req, res) => {
+  try {
+    const missing = requiredFields(req.body, ['partyId']);
+    if (missing.length) {
+      return respError(res, 'Missing required fields: ' + missing.join(', '), 400);
+    }
+
+    const { partyId, videoUrl, provider, currentTime, isPlaying, playbackRate, volume } = req.body;
+
+    const updates = {};
+    if (videoUrl !== undefined) updates.videoUrl = videoUrl;
+    if (provider !== undefined) updates.provider = provider;
+    if (currentTime !== undefined) updates.currentTime = currentTime;
+    if (isPlaying !== undefined) updates.isPlaying = isPlaying;
+    if (playbackRate !== undefined) updates.playbackRate = playbackRate;
+    if (volume !== undefined) updates.volume = volume;
+    updates.lastUpdated = Date.now();
+
+    const state = await MediaState.findOneAndUpdate(
+      { party: partyId },
+      updates,
+      { upsert: true, new: true }
+    );
+
+    return success(res, { state });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+
+
+messageController.js
+const Message = require('../models/Message');
+const { success, error: respError } = require('../utils/responseHandler');
+const { requiredFields } = require('../utils/validators');
+
+exports.sendMessage = async (req, res) => {
+  try {
+    const missing = requiredFields(req.body, ['party', 'content']);
+    if (missing.length) {
+      return respError(res, 'Missing required fields: ' + missing.join(', '), 400);
+    }
+
+    const { party, content, type } = req.body;
+    const user = req.user;
+
+    const msg = await Message.create({
+      party,
+      user: user._id,
+      senderName: user.watchName || user.username || user.name,
+      content,
+      type: type || 'text',
+    });
+
+    return success(res, { message: msg }, 201);
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+exports.getMessages = async (req, res) => {
+  try {
+    const partyId = req.query.partyId || req.params.partyId;
+    if (!partyId) {
+      return respError(res, 'partyId required', 400);
+    }
+
+    const limit = parseInt(req.query.limit || '200', 10);
+    const messages = await Message.find({ party: partyId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .sort({ createdAt: 1 });
+
+    return success(res, { messages });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+exports.deleteMessage = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const msg = await Message.findById(id);
+    if (!msg) {
+      return respError(res, 'Message not found', 404);
+    }
+
+    // Only sender or (later) host can delete; for now: only sender
+    if (msg.user.toString() !== req.user._id.toString()) {
+      return respError(res, 'Forbidden', 403);
+    }
+
+    await msg.deleteOne();
+    return success(res, {});
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+
+
+participantController.js
+const Participant = require('../models/Participant');
+const Party = require('../models/Party');
+const { success, error: respError } = require('../utils/responseHandler');
+const { requiredFields } = require('../utils/validators');
+
+// --------------------------------------------------
+// JOIN PARTY
+// --------------------------------------------------
+exports.joinParty = async (req, res) => {
+  try {
+    const missing = requiredFields(req.body, ["partyId", "displayName"]);
+    if (missing.length)
+      return respError(
+        res,
+        "Missing required fields: " + missing.join(", "),
+        400
+      );
+
+    const { partyId, displayName, avatar, isAnonymous } = req.body;
+    const userId = req.user ? req.user._id : null;
+
+    const party = await Party.findById(partyId);
+    if (!party) return respError(res, "Party not found", 404);
+
+    let participantDoc = null;
+    let incrementCount = true;
+
+    if (userId) {
+      // For logged-in users, reuse participant if it already exists
+      participantDoc = await Participant.findOne({ party: partyId, user: userId });
+
+      if (participantDoc) {
+        incrementCount = false; // don't double count
+        participantDoc.displayName = displayName;
+        participantDoc.avatar = avatar || participantDoc.avatar;
+        participantDoc.isAnonymous = !!isAnonymous;
+        participantDoc.lastActiveAt = Date.now();
+      } else {
+        participantDoc = new Participant({
+          party: partyId,
+          user: userId,
+          displayName,
+          avatar: avatar || "",
+          isAnonymous: !!isAnonymous,
+        });
+      }
+
+      // mark host if this user is the party host
+      if (party.host.toString() === userId.toString()) {
+        participantDoc.isHost = true;
+      }
+    } else {
+      // Anonymous guest
+      participantDoc = new Participant({
+        party: partyId,
+        user: null,
+        displayName,
+        avatar: avatar || "",
+        isAnonymous: !!isAnonymous,
+      });
+    }
+
+    await participantDoc.save();
+
+    // Always bump lastActive; only increment count for truly new participant
+    const update = {
+      $set: {
+        lastActive: Date.now(),
+        isActive: true,
+      },
+    };
+
+    if (incrementCount) {
+      update.$inc = { participantsCount: 1 };
+    }
+
+    await Party.findByIdAndUpdate(partyId, update);
+
+    return success(res, { participant: participantDoc }, 201);
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+// --------------------------------------------------
+// LEAVE PARTY
+// --------------------------------------------------
+exports.leaveParty = async (req, res) => {
+  try {
+    const participantId = req.params.id;
+    const participant = await Participant.findById(participantId);
+
+    if (!participant) return respError(res, "Participant not found", 404);
+
+    const partyId = participant.party;
+
+    // remove participant
+    await Participant.findByIdAndDelete(participantId);
+
+    // safely decrement (not below 0)
+    const party = await Party.findById(partyId);
+    if (!party) return success(res, { left: true });
+
+    const newCount = Math.max(0, (party.participantsCount || 0) - 1);
+
+    const update = {
+      participantsCount: newCount,
+      lastActive: Date.now(),
+    };
+
+    // if empty → mark inactive
+    if (newCount === 0) {
+      update.isActive = false;
+    }
+
+    await Party.findByIdAndUpdate(partyId, { $set: update });
+
+    return success(res, { left: true });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+// --------------------------------------------------
+// LIST PARTICIPANTS
+// --------------------------------------------------
+exports.listParticipants = async (req, res) => {
+  try {
+    const partyId = req.query.partyId || req.params.partyId;
+    if (!partyId) return respError(res, 'partyId required', 400);
+
+    const participants = await Participant.find({ party: partyId })
+      .sort({ joinedAt: 1 });
+
+    return success(res, { participants });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+// --------------------------------------------------
+// UPDATE PARTICIPANT
+// --------------------------------------------------
+exports.updateParticipant = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updates = req.body;
+
+    const p = await Participant.findByIdAndUpdate(id, updates, { new: true });
+    if (!p) return respError(res, 'Participant not found', 404);
+
+    return success(res, { participant: p });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+
+
+partyController.js
+const Party = require('../models/Party');
+const generatePartyCode = require('../utils/generatePartyCode');
+const { success, error: respError } = require('../utils/responseHandler');
+const { requiredFields } = require('../utils/validators');
+
+// --------------------------------------------------
+// CREATE PARTY
+// --------------------------------------------------
+exports.createParty = async (req, res) => {
+  try {
+    const missing = requiredFields(req.body, ['name']);
+    if (missing.length) {
+      return respError(res, 'Missing required fields: ' + missing.join(', '), 400);
+    }
+
+    const {
+      name,
+      description,
+      isPrivate,
+      password,
+      settings,
+      maxParticipants,   // ⬅ from frontend
+    } = req.body;
+
+    const hostId = req.user ? req.user._id : req.body.host; // prefer authenticated user
+
+    // Generate unique code
+    let code = generatePartyCode(6);
+    while (await Party.findOne({ code })) {
+      code = generatePartyCode(6);
+    }
+
+    // Normalize settings
+    const finalSettings = {
+      allowAnonymous: false,
+      enableChat: true,
+      enableAudio: true,
+      enableVideo: true,
+      enableWhiteboard: true,
+      theme: 'default',
+      maxParticipants: 50,
+      ...(settings || {}),
+    };
+
+    if (typeof maxParticipants === 'number') {
+      finalSettings.maxParticipants = maxParticipants;
+    }
+
+    const party = new Party({
+      name,
+      description,
+      host: hostId,
+      code,
+      isPrivate: !!isPrivate,
+      password: password || '',
+      settings: finalSettings,
+      participantsCount: 0,
+      isActive: true,
+      lastActive: Date.now(),
+    });
+
+    await party.save();
+
+    // ✅ NO auto host participant here.
+    // Host will join via /participants/join like everyone else.
+
+    return success(res, { party }, 201);
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+// --------------------------------------------------
+// GET SINGLE PARTY
+// --------------------------------------------------
+exports.getParty = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const party = await Party.findById(id).populate('host', 'name username avatar');
+    if (!party) return respError(res, 'Party not found', 404);
+    return success(res, { party });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+/**
+ * listParties:
+ * - if ?public=true → only public parties
+ * - otherwise → all parties
+ * - shows only "fresh" parties:
+ *   - participantsCount > 0 OR created within last 3 hours
+ */
+exports.listParties = async (req, res) => {
+  try {
+    // Parties that had any activity in last 5 minutes
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000);
+
+    const filter = {
+      lastActive: { $gte: cutoff },
+    };
+
+    // Only public parties if requested
+    if (req.query.public === "true") {
+      filter.isPrivate = false;
+    }
+
+    const parties = await Party.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .populate("host", "name username avatar");
+
+    return success(res, { parties });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+exports.updateParty = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updates = { ...req.body, updatedAt: Date.now() };
+    const party = await Party.findByIdAndUpdate(id, updates, { new: true });
+    if (!party) return respError(res, 'Party not found', 404);
+    return success(res, { party });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+exports.deleteParty = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const party = await Party.findByIdAndDelete(id);
+    if (!party) return respError(res, 'Party not found', 404);
+    // TODO: cleanup participants/messages/media/etc if needed
+    return success(res, {});
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+exports.verifyPartyPassword = async (req, res) => {
+  try {
+    const { code, password } = req.body;
+    const party = await Party.findOne({ code });
+    if (!party) return respError(res, 'Party not found', 404);
+    if (!party.isPrivate) return success(res, { ok: true });
+    const match = await party.comparePassword(password || '');
+    if (!match) return respError(res, 'Invalid password', 403);
+    return success(res, { ok: true });
+  } catch (err) {
+    return respError(res, err.message, 500);
+  }
+};
+
+
+
+backend/routes:
+
+authRoutes.js
+const express = require("express");
+const router = express.Router();
+const auth = require("../controllers/authController");
+const authMiddleware = require("../middleware/authMiddleware");
+
+// -----------------------
+// PUBLIC ROUTES
+// -----------------------
+router.post("/register", auth.register);
+router.post("/login", auth.login);
+
+// -----------------------
+// AUTHENTICATED ROUTES
+// -----------------------
+router.get("/me", authMiddleware, (req, res) => {
+  req.params.id = req.user.id;
+  return auth.getUser(req, res);
+});
+
+router.put("/me", authMiddleware, (req, res) => {
+  req.params.id = req.user.id;
+  return auth.updateUser(req, res);
+});
+
+router.delete("/me", authMiddleware, (req, res) => {
+  req.params.id = req.user.id;
+  return auth.deleteUser(req, res);
+});
+
+// -----------------------
+// CHANGE PASSWORD
+// -----------------------
+router.put("/change-password", authMiddleware, auth.changePassword);
+
+module.exports = router;
+
+
+
+feedbackRoutes.js
+const express = require('express');
+const router = express.Router();
+const feedback = require('../controllers/feedbackController');
+const authMiddleware = require('../middleware/authMiddleware');
+
+// Create feedback
+router.post('/', authMiddleware, feedback.createFeedback);
+
+// List feedback (optional: restrict to admin later)
+router.get('/', authMiddleware, feedback.listFeedback);
+
+// Delete feedback (only owner for now)
+router.delete('/:id', authMiddleware, feedback.deleteFeedback);
+
+module.exports = router;
+
+
+
+mediaRoutes.js
+const express = require('express');
+const router = express.Router();
+const media = require('../controllers/mediaController');
+const authMiddleware = require('../middleware/authMiddleware');
+
+// Get media state
+router.get('/party/:partyId', authMiddleware, media.getMediaState);
+
+// Update media state
+router.post('/update', authMiddleware, media.updateMediaState);
+
+module.exports = router;
+
+
+
+messageRoutes.js
+const express = require('express');
+const router = express.Router();
+const msg = require('../controllers/messageController');
+const authMiddleware = require('../middleware/authMiddleware');
+
+// Send a message
+router.post('/', authMiddleware, msg.sendMessage);
+
+// Get messages for a party
+router.get('/party/:partyId', authMiddleware, msg.getMessages);
+
+// Delete a message
+router.delete('/:id', authMiddleware, msg.deleteMessage);
+
+module.exports = router;
+
+
+
+participantRoutes.js
+const express = require("express");
+const router = express.Router();
+
+const participant = require("../controllers/participantController");
+const auth = require("../middleware/authMiddleware");
+const optionalAuth = require("../middleware/optionalAuth");
+
+// Join party (can be anonymous OR logged-in)
+router.post("/join", optionalAuth, participant.joinParty);
+
+// Leave party (authenticated OR anonymous)
+router.delete("/:id", participant.leaveParty);
+
+// List participants (public)
+router.get("/list/:partyId", participant.listParticipants);
+
+// Update participant (rename, avatar, etc.) — logged-in only
+router.put("/:id", auth, participant.updateParticipant);
+
+module.exports = router;
+
+
+
+partyRoutes.js
+const express = require('express');
+const router = express.Router();
+const party = require('../controllers/partyController');
+const authMiddleware = require('../middleware/authMiddleware');
+const requireHost = require('../middleware/requireHost');
+
+// Create new party (host must be logged in)
+router.post('/', authMiddleware, party.createParty);
+
+// List parties (public list – can keep open or require auth if you want)
+router.get('/', party.listParties);
+
+// Get specific party info
+router.get('/:id', party.getParty);
+
+// Update party (host only)
+router.put('/:id', authMiddleware, requireHost, party.updateParty);
+
+// Delete party (host only)
+router.delete('/:id', authMiddleware, requireHost, party.deleteParty);
+
+// Verify password
+router.post('/verify-password', authMiddleware, party.verifyPartyPassword);
+
+module.exports = router;
+
+
+
+backend/middleware:
+
+authMiddleware.js
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
+
+module.exports = async function authMiddleware(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, error: 'Authorization token missing' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const payload = jwt.verify(token, JWT_SECRET);
+
+    const user = await User.findById(payload.id).select('-password');
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'User not found' });
+    }
+
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+  }
+};
+
+
+
+errorHandler.js
+module.exports = function errorHandler(err, req, res, next) {
+  console.error('Error:', err);
+  const status = err.status || 500;
+  res.status(status).json({
+    success: false,
+    error: err.message || 'Internal Server Error',
+  });
+};
+
+
+
+optionalAuth.js
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
+
+module.exports = async function optionalAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+
+    const token = authHeader.split(' ')[1];
+    const payload = jwt.verify(token, JWT_SECRET);
+
+    const user = await User.findById(payload.id).select('-password');
+    if (user) {
+      req.user = user;
+    }
+  } catch (err) {
+    // ignore invalid token, treat as anonymous
+  }
+  next();
+};
+
+
+
+requireHost.js
+const Party = require('../models/Party');
+
+module.exports = async function requireHost(req, res, next) {
+  try {
+    const partyId = req.params.partyId || req.params.id || req.body.partyId || req.body.party;
+    if (!partyId) {
+      return res.status(400).json({ success: false, error: 'Party id required' });
+    }
+
+    const party = await Party.findById(partyId);
+    if (!party) {
+      return res.status(404).json({ success: false, error: 'Party not found' });
+    }
+
+    if (!req.user || party.host.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, error: 'Host privileges required' });
+    }
+
+    req.party = party;
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+
+backend/socket:
+
+socketServer.js
+// backend/socket/socketServer.js
+const Participant = require("../models/Participant");
+const Party = require("../models/Party");
+
+module.exports = function (io) {
+  console.log("🔌 Socket.IO initialized");
+
+  // In-memory tracking
+  // rooms[partyId] = [{ socketId, participantId, displayName }]
+  const rooms = {};
+
+  // Whiteboard history
+  // whiteboardStrokes[partyId] = [{ prevX, prevY, x, y }]
+  const whiteboardStrokes = {};
+
+  // Helper: bump party lastActive on any activity
+  async function touchParty(partyId) {
+    if (!partyId) return;
+    try {
+      await Party.findByIdAndUpdate(partyId, {
+        $set: {
+          lastActive: Date.now(),
+          isActive: true,
+        },
+      });
+    } catch (err) {
+      console.error("Failed to update party lastActive:", err.message);
+    }
+  }
+
+  // Helper: clean up DB when a participant disappears (disconnect case)
+  async function cleanupParticipant(participantId) {
+    try {
+      const participant = await Participant.findById(participantId);
+      if (!participant) return; // already removed via API /leave
+
+      const partyId = participant.party;
+
+      await Participant.findByIdAndDelete(participantId);
+
+      const party = await Party.findById(partyId);
+      if (!party) return;
+
+      const newCount = Math.max(0, (party.participantsCount || 0) - 1);
+
+      const update = {
+        participantsCount: newCount,
+        lastActive: Date.now(),
+      };
+
+      if (newCount === 0) {
+        update.isActive = false;
+      }
+
+      await Party.findByIdAndUpdate(partyId, { $set: update });
+    } catch (err) {
+      console.error("Error cleaning up participant on disconnect:", err.message);
+    }
+  }
+
+  io.on("connection", (socket) => {
+    console.log("⚡ User connected:", socket.id);
+
+    // ======================================================
+    // JOIN ROOM
+    // ======================================================
+    socket.on("join-room", ({ partyId, participantId, displayName }) => {
+      if (!partyId || !participantId) return;
+
+      socket.join(partyId);
+
+      if (!rooms[partyId]) rooms[partyId] = [];
+
+      rooms[partyId].push({
+        socketId: socket.id,
+        participantId,
+        displayName,
+      });
+
+      console.log(`➡️ ${displayName} joined ${partyId}`);
+
+      // Send updated participant list to all
+      io.to(partyId).emit("participants-update", rooms[partyId]);
+
+      // Mark party as active
+      touchParty(partyId);
+
+      // Send existing whiteboard history TO NEW USER ONLY
+      if (whiteboardStrokes[partyId] && whiteboardStrokes[partyId].length > 0) {
+        socket.emit("whiteboard:state", {
+          partyId,
+          strokes: whiteboardStrokes[partyId],
+        });
+      }
+    });
+
+    // ======================================================
+    // LEAVE ROOM (logical leave from frontend)
+    // ======================================================
+    socket.on("leave-room", ({ partyId }) => {
+      if (!partyId) return;
+
+      if (rooms[partyId]) {
+        rooms[partyId] = rooms[partyId].filter(
+          (p) => p.socketId !== socket.id
+        );
+      }
+
+      io.to(partyId).emit("participants-update", rooms[partyId] || []);
+      socket.leave(partyId);
+
+      console.log(`⛔ Socket ${socket.id} left room ${partyId}`);
+      touchParty(partyId);
+    });
+
+    // ======================================================
+    // DISCONNECT (tab closed / network lost)
+    // ======================================================
+    socket.on("disconnect", async () => {
+      console.log("❌ Socket disconnected:", socket.id);
+
+      // For each room, find participants belonging to this socket
+      for (const roomId in rooms) {
+        const room = rooms[roomId];
+        if (!room || room.length === 0) continue;
+
+        const leaving = room.filter((p) => p.socketId === socket.id);
+        if (leaving.length === 0) continue;
+
+        // Remove them from in-memory room
+        rooms[roomId] = room.filter((p) => p.socketId !== socket.id);
+
+        io.to(roomId).emit("participants-update", rooms[roomId] || []);
+
+        // Clean up DB for each participantId that belonged to this socket
+        for (const lp of leaving) {
+          if (lp.participantId) {
+            await cleanupParticipant(lp.participantId);
+          }
+        }
+      }
+    });
+
+    // ======================================================
+    // CHAT SYSTEM
+    // ======================================================
+    socket.on("chat:send", (msg) => {
+      if (!msg || !msg.party) return;
+      io.to(msg.party).emit("chat:new", msg);
+      touchParty(msg.party);
+    });
+
+    // ======================================================
+    // MEDIA SYNC
+    // ======================================================
+    socket.on("media:sync", ({ partyId, state }) => {
+      if (!partyId || !state) return;
+      socket.to(partyId).emit("media:update", state);
+      touchParty(partyId);
+    });
+
+    // ======================================================
+    // WHITEBOARD SYNC (PERSISTENT)
+    // ======================================================
+    socket.on("whiteboard:draw", ({ partyId, stroke }) => {
+      if (!partyId || !stroke) return;
+
+      if (!whiteboardStrokes[partyId]) whiteboardStrokes[partyId] = [];
+      whiteboardStrokes[partyId].push(stroke);
+
+      socket.to(partyId).emit("whiteboard:update", stroke);
+      touchParty(partyId);
+    });
+
+    socket.on("whiteboard:clear", ({ partyId }) => {
+      if (!partyId) return;
+
+      whiteboardStrokes[partyId] = []; // reset memory
+      io.to(partyId).emit("whiteboard:clear");
+      touchParty(partyId);
+    });
+
+    // ======================================================
+    // CAM / MIC / SCREEN SHARE
+    // ======================================================
+    socket.on("av:update", ({ partyId, participantId, status }) => {
+      if (!partyId || !participantId) return;
+      socket.to(partyId).emit("av:update", { participantId, status });
+      touchParty(partyId);
+    });
+
+    socket.on("screen-share", ({ partyId, participantId, isSharing }) => {
+      if (!partyId || !participantId) return;
+      socket.to(partyId).emit("screen-share", { participantId, isSharing });
+      touchParty(partyId);
+    });
+
+    // ======================================================
+    // HOST CONTROLS
+    // ======================================================
+    socket.on("host:kick", ({ partyId, participantId }) => {
+      if (!partyId || !participantId) return;
+      io.to(partyId).emit("host:kick", participantId);
+      touchParty(partyId);
+    });
+
+    socket.on("host:toggle-chat", ({ partyId, value }) => {
+      if (!partyId) return;
+      io.to(partyId).emit("host:toggle-chat", value);
+      touchParty(partyId);
+    });
+
+    socket.on("host:toggle-screen", ({ partyId, value }) => {
+      if (!partyId) return;
+      io.to(partyId).emit("host:toggle-screen", value);
+      touchParty(partyId);
+    });
+
+    // ======================================================
+    // WEBRTC (CAM/MIC/SCREEN)
+    // ======================================================
+    socket.on("webrtc:offer", ({ partyId, to, offer }) => {
+      if (!partyId || !to || !offer) return;
+      io.to(to).emit("webrtc:offer", {
+        from: socket.id,
+        partyId,
+        offer,
+      });
+      touchParty(partyId);
+    });
+
+    socket.on("webrtc:answer", ({ partyId, to, answer }) => {
+      if (!partyId || !to || !answer) return;
+      io.to(to).emit("webrtc:answer", {
+        from: socket.id,
+        partyId,
+        answer,
+      });
+      touchParty(partyId);
+    });
+
+    socket.on("webrtc:ice-candidate", ({ partyId, to, candidate }) => {
+      if (!partyId || !to || !candidate) return;
+      io.to(to).emit("webrtc:ice-candidate", {
+        from: socket.id,
+        partyId,
+        candidate,
+      });
+      touchParty(partyId);
+    });
+  });
+};
+
+
+
+backend/utils:
+
+generatePartyCode.js
+function generatePartyCode(len = 6) {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < len; i++) {
+    out += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return out;
+}
+
+module.exports = generatePartyCode;
+
+
+
+responseHandler.js
+function success(res, payload = {}, status = 200) {
+  return res.status(status).json({ success: true, ...payload });
+}
+
+function error(res, message = 'An error occurred', status = 400) {
+  return res.status(status).json({ success: false, error: message });
+}
+
+module.exports = { success, error };
+
+
+
+validators.js
+function requiredFields(body, fields = []) {
+  const missing = [];
+  for (const f of fields) {
+    const v = body[f];
+    if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) {
+      missing.push(f);
+    }
+  }
+  return missing;
+}
+
+module.exports = { requiredFields };
+
+
+
+backend:
+
+.env
+PORT=5000
+MONGO_URI="mongodb+srv://alokwatchparty:watchparty3008@watchparty.wujklly.mongodb.net/watchparty?retryWrites=true&w=majority"
+JWT_SECRET="supersecretkey"
+
+
+
+package.json
+{
+  "name": "watchparty-backend",
+  "version": "1.0.0",
+  "description": "Backend for WatchParty Web Application with real-time sync, chat, screen-sharing, and whiteboard.",
+  "author": "Alok Bhadauria",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.8.0",
+    "morgan": "^1.10.0",
+    "socket.io": "^4.8.1",
+    "validator": "^13.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
+
+
+
+server.js
+// backend/server.js
+const express = require('express');
+const cors = require('cors');
+const mongoose = require('mongoose');
+const http = require('http');
+const { Server } = require('socket.io');
+let morgan = null;
+try {
+  morgan = require('morgan');
+} catch (e) {
+  console.warn('Optional dependency "morgan" not installed — request logging will be minimal.');
+}
+require('dotenv').config();
+
+const errorHandler = require('./middleware/errorHandler');
+
+// Routes
+const authRoutes = require('./routes/authRoutes');
+const partyRoutes = require('./routes/partyRoutes');
+const participantRoutes = require('./routes/participantRoutes');
+const messageRoutes = require('./routes/messageRoutes');
+const mediaRoutes = require('./routes/mediaRoutes');
+const feedbackRoutes = require('./routes/feedbackRoutes');
+
+// Create Express app
+const app = express();
+
+// Basic middleware
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: false,
+}));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+if (morgan) {
+  app.use(morgan('dev'));
+} else {
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+    next();
+  });
+}
+
+// Health check
+app.get('/', (req, res) =>
+  res.json({ ok: true, msg: 'WatchParty backend is running 🚀' })
+);
+
+// API routes (REST)
+app.use('/api/auth', authRoutes);
+app.use('/api/parties', partyRoutes);
+app.use('/api/participants', participantRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/media', mediaRoutes);
+app.use('/api/feedback', feedbackRoutes);
+
+// Error handler (last)
+app.use(errorHandler);
+
+// ---- HTTP + SOCKET SERVER WRAP ----
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: 'http://localhost:5173',
+    methods: ['GET', 'POST'],
+  },
+});
+
+// Init socket logic
+require('./socket/socketServer')(io);
+
+// ---- STARTUP ----
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI;
+
+async function startServer() {
+  try {
+    if (!MONGO_URI) {
+      console.warn('MONGO_URI not set. Set it in .env to enable MongoDB.');
+    } else {
+      await mongoose.connect(MONGO_URI);
+      console.log('✅ Connected to MongoDB');
+    }
+
+    server.listen(PORT, () => {
+      console.log(`🚀 Server + Socket running at http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error('Failed to start server', err);
+    process.exit(1);
+  }
+}
+
+startServer();
+
+module.exports = { app, server, io };
+
+
+
+
+
+FRONTEND:
+
+frontend/src/api:
+
+authAPI.js
+import axios from "./axiosInstance";
+
+// Register
+export const registerUser = (data) =>
+  axios.post("/auth/register", data);
+
+// Login
+export const loginUser = (data) =>
+  axios.post("/auth/login", data);
+
+export const changePassword = (data) =>
+  axios.put("/auth/change-password", data);
+/**
+ * NOTE:
+ * Backend authRoutes only exposes:
+ *  - GET  /auth/me
+ *  - PUT  /auth/me
+ *  - DELETE /auth/me
+ *
+ * We keep the old function names/signatures (getUser, updateUser, deleteUser)
+ * but internally they call /auth/me and IGNORE the id param.
+ */
+
+// Get current logged-in user
+export const getUser = () =>
+  axios.get("/auth/me");
+
+// Update current user profile
+export const updateUser = (_id, data) =>
+  axios.put("/auth/me", data);
+
+// Delete current user
+export const deleteUser = () =>
+  axios.delete("/auth/me");
+
+
+
+axiosInstance.js
+import axios from "axios";
+
+const axiosInstance = axios.create({
+  baseURL: "http://localhost:5000/api", // change later for production
+  withCredentials: false,
+});
+
+// Auto-attach JWT token
+axiosInstance.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export default axiosInstance;
+
+
+
+feedbackAPI.js
+import axios from "./axiosInstance";
+
+export const createFeedback = (data) =>
+  axios.post("/feedback", data);
+
+export const getFeedback = () =>
+  axios.get("/feedback");
+
+export const deleteFeedback = (id) =>
+  axios.delete(`/feedback/${id}`);
+
+
+
+mediaAPI.js
+import axios from "./axiosInstance";
+
+export const getMediaState = (partyId) =>
+  axios.get(`/media/party/${partyId}`);
+
+export const updateMediaState = (data) =>
+  axios.post("/media/update", data);
+
+
+
+messageAPI.js
+import axios from "./axiosInstance";
+
+export const sendMessage = (data) =>
+  axios.post("/messages", data);
+
+export const getMessages = (partyId) =>
+  axios.get(`/messages/party/${partyId}`);
+
+export const deleteMessage = (id) =>
+  axios.delete(`/messages/${id}`);
+
+
+
+participantAPI.js
+import axios from "./axiosInstance";
+
+export const joinParticipant = (data) =>
+  axios.post("/participants/join", data);
+
+export const leaveParticipant = (id) =>
+  axios.delete(`/participants/${id}`);
+
+// ✅ match backend route: GET /participants/list/:partyId
+export const listParticipants = (partyId) =>
+  axios.get(`/participants/list/${partyId}`);
+
+export const updateParticipant = (id, data) =>
+  axios.put(`/participants/${id}`, data);
+
+
+
+partyAPI.js
+import axios from "./axiosInstance";
+
+// Get ALL active parties (public + private)
+// Backend listParties already filters by "fresh + active" logic.
+export const getPublicParties = () =>
+  axios.get("/parties");
+
+export const getParty = (id) =>
+  axios.get(`/parties/${id}`);
+
+export const createParty = (data) =>
+  axios.post("/parties", data);
+
+export const updateParty = (id, data) =>
+  axios.put(`/parties/${id}`, data);
+
+export const deleteParty = (id) =>
+  axios.delete(`/parties/${id}`);
+
+// Verify private party password
+export const verifyPartyPassword = (data) =>
+  axios.post("/parties/verify-password", data);
+
+
+
+frontend/src/components:
+
+AVPanel.jsx
+import { useContext, useEffect, useRef, useState } from "react";
+import { SocketContext } from "../context/SocketContext";
+import toast from "react-hot-toast";
+
+/**
+ * AVPanel:
+ * - Simple 1:1 WebRTC for now (good when 2 users in room)
+ * - Picks the first other participant as remote peer
+ */
+export default function AVPanel({ partyId, participants, onLeave, showLeaveButton = false }) {
+  const socket = useContext(SocketContext);
+
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+
+  const pcRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const remoteSocketIdRef = useRef(null);
+
+  const [camOn, setCamOn] = useState(false);
+  const [micOn, setMicOn] = useState(true);
+  const [screenOn, setScreenOn] = useState(false);
+
+  // Create RTCPeerConnection
+  const createPeerConnection = () => {
+    if (pcRef.current) return pcRef.current;
+
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && remoteSocketIdRef.current) {
+        socket.emit("webrtc:ice-candidate", {
+          partyId,
+          to: remoteSocketIdRef.current,
+          candidate: event.candidate,
+        });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      if (!remoteVideoRef.current) return;
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      }
+      remoteStreamRef.current.addTrack(event.track);
+    };
+
+    pcRef.current = pc;
+    return pc;
+  };
+
+  // Pick a remote peer (first other participant)
+  const getRemoteSocketId = () => {
+    const me = socket?.id;
+    if (!me) return null;
+
+    const others = (participants || []).filter((p) => p.socketId !== me);
+    return others.length ? others[0].socketId : null;
+  };
+
+  // WebRTC signaling listeners
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleOffer = async ({ from, offer }) => {
+      remoteSocketIdRef.current = from;
+      const pc = createPeerConnection();
+
+      if (!localStreamRef.current) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          });
+          localStreamRef.current = stream;
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+          }
+          stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+          setCamOn(true);
+        } catch (err) {
+          toast.error("Could not access camera/mic");
+          return;
+        }
+      }
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socket.emit("webrtc:answer", { partyId, to: from, answer });
+    };
+
+    const handleAnswer = async ({ answer }) => {
+      if (!pcRef.current) return;
+      await pcRef.current.setRemoteDescription(
+        new RTCSessionDescription(answer)
+      );
+    };
+
+    const handleCandidate = async ({ candidate }) => {
+      if (!pcRef.current) return;
+      try {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error("ICE error", err);
+      }
+    };
+
+    socket.on("webrtc:offer", handleOffer);
+    socket.on("webrtc:answer", handleAnswer);
+    socket.on("webrtc:ice-candidate", handleCandidate);
+
+    return () => {
+      socket.off("webrtc:offer", handleOffer);
+      socket.off("webrtc:answer", handleAnswer);
+      socket.off("webrtc:ice-candidate", handleCandidate);
+    };
+  }, [socket, participants, partyId]);
+
+  // Start camera and initiate call
+  const startCamera = async () => {
+    const remoteId = getRemoteSocketId();
+    if (!remoteId) return toast("Waiting for another user...");
+
+    remoteSocketIdRef.current = remoteId;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+
+      localStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+
+      const pc = createPeerConnection();
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket.emit("webrtc:offer", { partyId, to: remoteId, offer });
+
+      setCamOn(true);
+      setMicOn(true);
+    } catch (err) {
+      toast.error("Unable to access camera/mic");
+    }
+  };
+
+  const toggleMic = () => {
+    if (!localStreamRef.current) return;
+    const tracks = localStreamRef.current.getAudioTracks();
+    tracks.forEach((t) => (t.enabled = !t.enabled));
+    setMicOn((m) => !m);
+  };
+
+  const shareScreen = async () => {
+    if (!pcRef.current) return toast("Start camera first");
+
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+      });
+
+      const screenTrack = screenStream.getVideoTracks()[0];
+      const sender = pcRef.current
+        .getSenders()
+        .find((s) => s.track?.kind === "video");
+
+      if (sender) await sender.replaceTrack(screenTrack);
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = screenStream;
+      }
+      setScreenOn(true);
+
+      screenTrack.onended = async () => {
+        if (localStreamRef.current) {
+          const camTrack = localStreamRef.current.getVideoTracks()[0];
+          if (sender && camTrack) {
+            await sender.replaceTrack(camTrack);
+          }
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+          }
+        }
+        setScreenOn(false);
+      };
+    } catch (err) {
+      toast.error("Screen share failed");
+    }
+  };
+
+  const endCall = () => {
+    if (pcRef.current) pcRef.current.close();
+    pcRef.current = null;
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+    }
+    localStreamRef.current = null;
+
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getTracks().forEach((t) => t.stop());
+    }
+    remoteStreamRef.current = null;
+
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+
+    setCamOn(false);
+    setMicOn(true);
+    setScreenOn(false);
+  };
+
+  const handleLeaveClick = () => {
+    endCall();
+    onLeave && onLeave();
+  };
+
+  return (
+    <div
+      className="
+        h-full w-full rounded-2xl
+        bg-white/5 border border-white/15 backdrop-blur-xl
+        flex flex-col
+      "
+    >
+      {/* TITLE BAR */}
+      <div
+        className="
+          flex items-center justify-between
+          px-4 py-2 border-b border-white/10 bg-white/10
+        "
+      >
+        <div className="flex items-center gap-2">
+          <i className="ri-mic-line text-purple-300" />
+          <span className="text-sm font-semibold text-purple-200">
+            Live AV
+          </span>
+        </div>
+      </div>
+  
+
+      {/* CONTENT */}
+      <div className="flex-1 min-h-0 flex flex-col gap-3 p-4">
+        {/* Video boxes: side-by-side even on mobile */}
+        <div className="flex flex-row gap-4 flex-1 min-h-0">
+          {/* Self */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <span className="text-xs text-gray-300 mb-1">You</span>
+            <div
+              className="
+                rounded-xl border border-white/20 bg-black/60
+                overflow-hidden flex-1
+              "
+            >
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            </div>
+          </div>
+
+          {/* Remote */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <span className="text-xs text-gray-300 mb-1">Remote</span>
+            <div
+              className="
+                rounded-xl border border-white/20 bg-black/60
+                overflow-hidden flex-1
+              "
+            >
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Controls: 2×2 grid on mobile, row-ish on larger screens */}
+        <div
+          className="
+            mt-2 grid grid-cols-2 gap-3
+            sm:grid-cols-2
+            md:flex md:flex-wrap
+          "
+        >
+          <button
+            onClick={startCamera}
+            className="
+              px-3 py-2 rounded-xl
+              bg-cyan-500/20 border border-cyan-500/40
+              text-cyan-300 hover:bg-cyan-500/30 transition
+              flex items-center justify-center gap-2 text-xs sm:text-sm
+            "
+          >
+            <i className="ri-video-add-line" />
+            <span>{camOn ? "Restart Cam" : "Start Cam & Call"}</span>
+          </button>
+
+          <button
+            onClick={toggleMic}
+            disabled={!camOn}
+            className={`
+              px-3 py-2 rounded-xl border
+              flex items-center justify-center gap-2 text-xs sm:text-sm
+              ${
+                micOn
+                  ? "bg-white/10 border-white/30 text-gray-100"
+                  : "bg-red-500/20 border-red-500/50 text-red-200"
+              }
+            `}
+          >
+            <i className={micOn ? "ri-mic-line" : "ri-mic-off-line"} />
+            <span>{micOn ? "Mute Mic" : "Unmute Mic"}</span>
+          </button>
+
+          <button
+            onClick={shareScreen}
+            disabled={!camOn}
+            className={`
+              px-3 py-2 rounded-xl border
+              flex items-center justify-center gap-2 text-xs sm:text-sm
+              ${
+                screenOn
+                  ? "bg-purple-500/30 border-purple-500/60 text-purple-100"
+                  : "bg-purple-500/20 border-purple-500/40 text-purple-200"
+              }
+            `}
+          >
+            <i className="ri-computer-line" />
+            <span>{screenOn ? "Sharing..." : "Share Screen"}</span>
+          </button>
+
+          <button
+            onClick={endCall}
+            className="
+              px-3 py-2 rounded-xl
+              bg-red-500/20 border border-red-500/40
+              text-red-200 hover:bg-red-500/30 transition
+              flex items-center justify-center gap-2 text-xs sm:text-sm
+            "
+          >
+            <i className="ri-phone-hangup-line" />
+            <span>End Call</span>
+          </button>
+
+          {showLeaveButton && (
+            <button
+              onClick={onLeave}
+              className="
+                px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/40
+                text-red-300 hover:bg-red-500/30 text-sm flex items-center gap-1
+              "
+            >
+              <i className="ri-logout-box-r-line" />
+              <span>Leave Party</span>
+            </button>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+BottomSheet.jsx
+import { useEffect } from "react";
+
+export default function BottomSheet({ isOpen, onClose, title, children }) {
+  // Prevent body scroll when sheet is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => (document.body.style.overflow = "");
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="md:hidden fixed inset-0 z-40 pointer-events-none">
+      {/* Backdrop */}
+      <div
+        className="
+          absolute inset-0 bg-black/40 
+          opacity-0 animate-fadeIn pointer-events-auto
+        "
+        onClick={onClose}
+      />
+
+      {/* Sheet Container */}
+      <div
+        className="
+          absolute bottom-0 left-0 right-0
+          pointer-events-auto
+          animate-slideUp
+        "
+      >
+        <div
+          className="
+            bg-[#050814]/95 
+            border-t border-white/15
+            rounded-t-2xl px-4 pt-3 pb-4
+            max-h-[70vh] w-full
+            shadow-[0_-10px_30px_rgba(0,0,0,0.6)]
+            flex flex-col
+          "
+        >
+          {/* Drag handle */}
+          <div className="flex justify-center mb-2">
+            <div className="w-10 h-1.5 rounded-full bg-white/25" />
+          </div>
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-cyan-300">
+              {title}
+            </h3>
+
+            <button
+              onClick={onClose}
+              className="
+                w-8 h-8 flex items-center justify-center
+                rounded-full bg-white/10 border border-white/20
+                text-gray-300 text-lg
+                active:scale-90 transition
+              "
+            >
+              <i className="ri-close-line" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto custom-scroll pb-4">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+ChatBox.jsx
+import { useState, useEffect, useContext, useRef } from "react";
+import { getMessages, sendMessage } from "../api/messageAPI";
+import { SocketContext } from "../context/SocketContext";
+import toast from "react-hot-toast";
+
+export default function ChatBox({ partyId, participant, partyName, compact = false }) {
+  const socket = useContext(SocketContext);
+
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const bottomRef = useRef(null);
+
+  const formatTime = (ts) => {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return d
+      .toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+      .toLowerCase();
+  };
+
+  useEffect(() => {
+    getMessages(partyId)
+      .then((res) => setMessages(res.data.messages))
+      .catch(() => toast.error("Failed to load chat"));
+  }, [partyId]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handler = (msg) => setMessages((prev) => [...prev, msg]);
+    socket.on("chat:new", handler);
+
+    return () => socket.off("chat:new", handler);
+  }, [socket]);
+
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [messages]);
+
+  const sendMsg = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+
+    try {
+      const msg = {
+        party: partyId,
+        content: text,
+        senderName: participant.displayName,
+      };
+
+      const res = await sendMessage(msg);
+      socket.emit("chat:send", res.data.message);
+      setText("");
+    } catch {
+      toast.error("Failed to send message");
+    }
+  };
+
+  const containerClasses = `
+    h-full flex flex-col
+    rounded-2xl bg-white/5 border border-white/15
+    backdrop-blur-xl overflow-hidden
+  `;
+
+  const listPadding = compact ? "px-3 py-2" : "px-4 py-3";
+  const formPadding = compact ? "p-2" : "p-3";
+
+  return (
+    <div className={`${containerClasses} min-h-0`}>
+      {/* TITLE BAR */}
+      <div
+        className="
+          flex items-center justify-between
+          px-4 py-2 border-b border-white/10 bg-white/10
+        "
+      >
+        <div className="flex items-center gap-2">
+          <i className="ri-chat-3-line text-cyan-300" />
+          <span className="text-sm font-semibold text-cyan-200">
+            Room Chat
+          </span>
+        </div>
+
+        <span className="text-xs text-gray-300 truncate max-w-[130px] text-right">
+          Room Name : {partyName}
+        </span>
+      </div>
+
+
+      {/* MESSAGES */}
+      <div
+        className={`
+          flex-1 min-h-0 overflow-y-auto custom-scroll
+          flex flex-col gap-3 ${listPadding}
+        `}
+      >
+        {messages.map((m) => (
+          <div key={m._id} className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="text-purple-300 font-semibold text-sm">
+                {m.senderName}
+              </span>
+              <span className="text-[10px] text-gray-400">
+                {formatTime(m.createdAt)}
+              </span>
+            </div>
+            <p className="text-gray-200 text-sm">{m.content}</p>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* INPUT */}
+      <form
+        onSubmit={sendMsg}
+        className={`
+          flex gap-2 border-t border-white/10
+          bg-white/10 backdrop-blur-xl
+          min-w-0
+          ${formPadding}
+        `}
+      >
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Type a message..."
+          className="
+            flex-1 min-w-0 px-3 py-2 rounded-xl bg-white/10 border border-white/20
+            text-white placeholder-gray-400 text-sm
+          "
+        />
+        <button
+          className="
+            px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40
+            text-cyan-300 hover:bg-cyan-500/30 text-sm
+            flex items-center gap-1
+          "
+        >
+          <i className="ri-send-plane-2-line" />
+          <span>Send</span>
+        </button>
+      </form>
+    </div>
+  );
+}
+
+
+
+MobileToolbar.jsx
+export default function MobileToolbar({
+  active,
+  onSelect,
+  participantsCount,
+  onLeave,
+}) {
+  return (
+    <div
+      className="
+        md:hidden fixed bottom-0 left-0 right-0 z-30
+        bg-[#050814]/95 border-t border-white/15
+        px-3 py-2 flex items-center gap-2
+        backdrop-blur-xl
+      "
+    >
+      {/* Main buttons (equal width) */}
+      <div className="flex flex-1 gap-2">
+        <button
+          onClick={() => onSelect("av")}
+          className={`
+            flex-1 flex items-center justify-center gap-1
+            text-xs font-medium rounded-xl py-2
+            border
+            ${
+              active === "av"
+                ? "bg-cyan-500/25 border-cyan-500/60 text-cyan-200"
+                : "bg-white/5 border-white/20 text-gray-200"
+            }
+          `}
+        >
+          <i className="ri-video-chat-line text-sm" />
+          AV
+        </button>
+
+        <button
+          onClick={() => onSelect("chat")}
+          className={`
+            flex-1 flex items-center justify-center gap-1
+            text-xs font-medium rounded-xl py-2
+            border
+            ${
+              active === "chat"
+                ? "bg-purple-500/25 border-purple-500/60 text-purple-100"
+                : "bg-white/5 border-white/20 text-gray-200"
+            }
+          `}
+        >
+          <i className="ri-message-3-line text-sm" />
+          Chat
+        </button>
+
+        <button
+          onClick={() => onSelect("participants")}
+          className={`
+            flex-1 flex items-center justify-center gap-1
+            text-xs font-medium rounded-xl py-2
+            border
+            ${
+              active === "participants"
+                ? "bg-emerald-500/25 border-emerald-500/60 text-emerald-100"
+                : "bg-white/5 border-white/20 text-gray-200"
+            }
+          `}
+        >
+          <i className="ri-group-line text-sm" />
+          {participantsCount}
+        </button>
+      </div>
+
+      {/* Tiny leave button */}
+      <button
+        onClick={onLeave}
+        className="
+          flex items-center justify-center
+          w-10 h-10 rounded-full
+          bg-red-500/20 border border-red-500/50
+          text-red-200 text-lg
+        "
+      >
+        <i className="ri-logout-box-r-line" />
+      </button>
+    </div>
+  );
+}
+
+
+
+Navbar.jsx
+import { useContext, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
+
+export default function Navbar() {
+  const { user, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <nav className="
+      fixed top-0 left-0 w-full z-50 px-6 py-2
+      bg-white/10 backdrop-blur-xl border-b border-white/20
+      flex items-center justify-between
+    ">
+      {/* Logo */}
+      <Link
+        to="/"
+        className="text-2xl font-extrabold tracking-wide 
+        text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400"
+      >
+        WatchParty
+      </Link>
+
+      {/* Desktop menu */}
+      <div className="hidden md:flex items-center gap-6">
+        <Link
+          to="/parties"
+          className="
+            px-4 py-2 rounded-xl 
+            bg-cyan-500/10 border border-cyan-500/40
+            text-cyan-300 hover:bg-cyan-500/20 transition
+            shadow-[0_0_10px_rgba(0,255,255,0.25)]
+          "
+        >
+          Parties
+        </Link>
+
+        {user ? (
+          <>
+            <Link
+              to="/profile"
+              className="
+                flex items-center gap-2 px-4 py-2 rounded-xl
+                bg-purple-500/10 border border-purple-500/40
+                text-purple-300 hover:bg-purple-500/20 transition
+                shadow-[0_0_10px_rgba(180,0,255,0.25)]
+              "
+            >
+              <i className="ri-user-3-line text-xl"></i>
+              {user.username}
+            </Link>
+
+            <Link
+              to="/feedback"
+              className="
+                px-4 py-2 rounded-xl
+                bg-emerald-500/10 border border-emerald-500/40
+                text-emerald-300 hover:bg-emerald-500/20 transition
+                shadow-[0_0_10px_rgba(0,255,127,0.25)]
+              "
+            >
+              Feedback
+            </Link>
+
+            <button
+              onClick={() => {
+                logout();
+                navigate("/login");
+              }}
+              className="
+                px-4 py-2 rounded-xl
+                bg-red-500/10 border border-red-500/40
+                text-red-300 hover:bg-red-500/20 transition
+                shadow-[0_0_10px_rgba(255,0,0,0.25)]
+              "
+            >
+              Logout
+            </button>
+          </>
+        ) : (
+          <>
+            <Link
+              to="/login"
+              className="
+                px-4 py-2 rounded-xl
+                bg-cyan-500/10 border border-cyan-500/40
+                text-cyan-300 hover:bg-cyan-500/20 transition
+              "
+            >
+              Login
+            </Link>
+
+            <Link
+              to="/register"
+              className="
+                px-4 py-2 rounded-xl
+                bg-purple-500/10 border border-purple-500/40
+                text-purple-300 hover:bg-purple-500/20 transition
+              "
+            >
+              Register
+            </Link>
+          </>
+        )}
+      </div>
+
+      {/* Mobile menu toggle */}
+      <button
+        className="md:hidden text-3xl text-white"
+        onClick={() => setOpen(!open)}
+      >
+        <i className={open ? "ri-close-line" : "ri-menu-line"}></i>
+      </button>
+
+      {/* Mobile dropdown */}
+      {open && (
+        <div className="
+          absolute top-14 left-0 w-full px-6 py-4
+          bg-[#0a0f1f]/95 backdrop-blur-xl border-t border-white/10
+          flex flex-col gap-4 md:hidden
+        ">
+          <Link
+            to="/parties"
+            onClick={() => setOpen(false)}
+            className="text-cyan-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+          >
+            Parties
+          </Link>
+
+          {user ? (
+            <>
+              <Link
+                to="/profile"
+                onClick={() => setOpen(false)}
+                className="text-purple-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+              >
+                <i className="ri-user-3-line mr-2"></i>
+                {user.username}
+              </Link>
+
+              <Link
+                to="/feedback"
+                onClick={() => setOpen(false)}
+                className="text-emerald-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+              >
+                Feedback
+              </Link>
+
+              <button
+                onClick={() => {
+                  logout();
+                  navigate("/login");
+                }}
+                className="text-red-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                onClick={() => setOpen(false)}
+                className="text-cyan-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+              >
+                Login
+              </Link>
+              <Link
+                to="/register"
+                onClick={() => setOpen(false)}
+                className="text-purple-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+              >
+                Register
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+    </nav>
+  );
+}
+
+
+
+ParticipantList.jsx
+export default function ParticipantList({ participants, compact = false }) {
+  const containerClasses = `
+    h-full flex flex-col
+    rounded-2xl bg-white/5 border border-white/15
+    backdrop-blur-xl overflow-hidden
+  `;
+
+  return (
+    <div className={containerClasses}>
+      {/* TITLE BAR */}
+      <div
+        className="
+          flex items-center justify-between
+          px-4 py-2 border-b border-white/10 bg-white/10
+        "
+      >
+        <div className="flex items-center gap-2">
+          <i className="ri-team-line text-purple-300" />
+          <span className="text-sm font-semibold text-purple-200">
+            Participants
+          </span>
+        </div>
+        <span className="text-xs text-gray-300">
+          {participants.length}
+        </span>
+      </div>
+
+      {/* LIST */}
+      <div
+        className={`
+          flex-1 min-h-0 overflow-y-auto custom-scroll
+          p-4 flex flex-col gap-3
+        `}
+      >
+        {participants.map((p) => {
+          const isHost = p.isHost;
+
+          return (
+            <div
+              key={p.participantId || p._id || p.socketId}
+              className="
+                p-3 rounded-xl bg-white/10 border border-white/20
+                flex items-center gap-3
+                opacity-0 animate-fade-slide-in
+              "
+            >
+              <i className="ri-user-3-fill text-cyan-300 text-xl"></i>
+
+              <div className="flex items-center gap-2">
+                <span className="text-gray-200">
+                  {p.displayName || "Guest"}
+                </span>
+
+                {isHost && (
+                  <span
+                    className="
+                      text-[10px] px-2 py-[2px] rounded-full 
+                      bg-purple-600/30 border border-purple-400/40 
+                      text-purple-200 font-semibold
+                      shadow-[0_0_6px_rgba(180,0,255,0.5)]
+                      animate-pulse
+                    "
+                  >
+                    HOST
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+
+PartyCard.jsx
+export default function PartyCard({ party, onJoin }) {
+  return (
+    <div
+      className="
+      p-6 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-xl
+      shadow-[0_0_25px_rgba(0,255,255,0.15)]
+      flex flex-col gap-3 hover:bg-white/15 transition
+    "
+    >
+      <h2 className="text-2xl font-semibold text-cyan-300">{party.name}</h2>
+      <p className="text-gray-300 text-sm">{party.description || "No description"}</p>
+
+      <div className="flex justify-between items-center text-sm text-gray-400 mt-2">
+        <span><i className="ri-user-line mr-1"></i>Host: {party.host?.username}</span>
+        <span><i className="ri-group-line mr-1"></i>{party.participantsCount} joined</span>
+      </div>
+
+      <button
+        onClick={onJoin}
+        className="
+          mt-3 py-2 rounded-xl
+          bg-purple-500/20 border border-purple-500/40 backdrop-blur-xl
+          text-purple-200 hover:bg-purple-500/30 transition
+          shadow-[0_0_20px_rgba(180,0,255,0.25)]
+        "
+      >
+        Join Party
+      </button>
+    </div>
+  );
+}
+
+
+
+ProtectedRoute.jsx
+import { useContext } from "react";
+import { Navigate } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
+
+export default function ProtectedRoute({ children }) {
+  const { user, loading } = useContext(AuthContext);
+
+  if (loading) return null; // avoid redirect loop
+
+  if (!user) return <Navigate to="/login" replace />;
+
+  return children;
+}
+
+
+
+VideoPlayer.jsx
+// src/components/VideoPlayer.jsx
+import { useContext, useEffect, useRef, useState } from "react";
+import { SocketContext } from "../context/SocketContext";
+import { getMediaState, updateMediaState } from "../api/mediaAPI";
+import toast from "react-hot-toast";
+
+export default function VideoPlayer({ party, participant }) {
+  const socket = useContext(SocketContext);
+  const videoRef = useRef(null);
+
+  const [videoUrl, setVideoUrl] = useState("");
+  const [inputUrl, setInputUrl] = useState("");
+
+  const [mediaType, setMediaType] = useState("video");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [volume, setVolume] = useState(1);
+
+  const [loading, setLoading] = useState(true);
+
+  const isHost = !!participant?.isHost;
+
+  const detectMediaType = (url) => {
+    if (!url) return "video";
+    const lower = url.toLowerCase();
+    const direct =
+      lower.endsWith(".mp4") ||
+      lower.endsWith(".webm") ||
+      lower.endsWith(".ogg") ||
+      lower.includes(".m3u8");
+
+    return direct ? "video" : "unsupported";
+  };
+
+  // Load saved media state
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const res = await getMediaState(party._id);
+        const s = res.data?.state;
+        if (!s || cancelled) return setLoading(false);
+
+        setVideoUrl(s.videoUrl || "");
+        setInputUrl(s.videoUrl || "");
+        setMediaType(detectMediaType(s.videoUrl));
+        setIsPlaying(!!s.isPlaying);
+        setCurrentTime(s.currentTime || 0);
+        setPlaybackRate(s.playbackRate || 1);
+        if (s.volume !== undefined) setVolume(s.volume);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => (cancelled = true);
+  }, [party._id]);
+
+  // Listen for socket sync updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handler = (state) => {
+      if (!state || state.partyId !== party._id) return;
+
+      setVideoUrl(state.videoUrl);
+      setMediaType(detectMediaType(state.videoUrl));
+      setIsPlaying(state.isPlaying);
+      setCurrentTime(state.currentTime);
+      setPlaybackRate(state.playbackRate);
+      if (state.volume !== undefined) setVolume(state.volume);
+
+      const v = videoRef.current;
+      if (!v) return;
+
+      if (Math.abs(v.currentTime - state.currentTime) > 0.5) {
+        v.currentTime = state.currentTime;
+      }
+      v.playbackRate = state.playbackRate;
+
+      if (state.isPlaying) v.play().catch(() => {});
+      else v.pause();
+    };
+
+    socket.on("media:update", handler);
+    return () => socket.off("media:update", handler);
+  }, [socket, party._id]);
+
+  const sync = async (next) => {
+    const s = {
+      partyId: party._id,
+      videoUrl: next.videoUrl ?? videoUrl,
+      currentTime: next.currentTime ?? currentTime,
+      isPlaying: next.isPlaying ?? isPlaying,
+      playbackRate: next.playbackRate ?? playbackRate,
+      volume: next.volume ?? volume,
+    };
+
+    try {
+      await updateMediaState(s);
+      socket.emit("media:sync", { partyId: party._id, state: s });
+    } catch {}
+  };
+
+  const loadMedia = async () => {
+    if (!inputUrl.trim()) return toast.error("Please enter a URL");
+
+    const type = detectMediaType(inputUrl.trim());
+    if (type === "unsupported") {
+      toast.error("Only direct video URLs (.mp4, .webm) are supported");
+    }
+
+    setVideoUrl(inputUrl.trim());
+    setMediaType(type);
+    setIsPlaying(false);
+    setCurrentTime(0);
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+
+    await sync({
+      videoUrl: inputUrl.trim(),
+      currentTime: 0,
+      isPlaying: false,
+    });
+
+    toast.success("Loaded for everyone");
+  };
+
+  const handlePlay = async () => {
+    if (!isHost) return;
+    setIsPlaying(true);
+    await sync({
+      isPlaying: true,
+      currentTime: videoRef.current?.currentTime,
+    });
+  };
+
+  const handlePause = async () => {
+    if (!isHost) return;
+    setIsPlaying(false);
+    await sync({
+      isPlaying: false,
+      currentTime: videoRef.current?.currentTime,
+    });
+  };
+
+  const handleSeek = async () => {
+    if (!isHost || !videoRef.current) return;
+    const t = videoRef.current.currentTime;
+    setCurrentTime(t);
+    await sync({ currentTime: t });
+  };
+
+  const handleLoaded = () => {
+    if (!videoRef.current) return;
+    videoRef.current.playbackRate = playbackRate;
+    videoRef.current.volume = volume;
+  };
+
+  const handleRate = async (rate) => {
+    if (!isHost) return;
+    setPlaybackRate(rate);
+    if (videoRef.current) videoRef.current.playbackRate = rate;
+    await sync({ playbackRate: rate });
+  };
+
+  const handleVol = (e) => {
+    const v = Number(e.target.value);
+    setVolume(v);
+    if (videoRef.current) videoRef.current.volume = v;
+  };
+
+  if (loading)
+    return (
+      <div className="flex-1 flex items-center justify-center text-gray-300">
+        Loading video…
+      </div>
+    );
+
+  const unsupported = videoUrl && mediaType === "unsupported";
+
+  return (
+    <div className="flex flex-col w-full items-center px-4 pt-4">
+
+      {/* ================= URL INPUT (Host Only) ================ */}
+      {isHost && (
+        <div className="w-full max-w-3xl flex gap-2 mb-3">
+          <input
+            value={inputUrl}
+            onChange={(e) => setInputUrl(e.target.value)}
+            placeholder="Paste direct video URL (.mp4)"
+            className="
+              flex-1 p-2 rounded-xl bg-white/10 border border-white/20
+              text-white placeholder-gray-400 text-sm
+            "
+          />
+          <button
+            onClick={loadMedia}
+            className="
+              px-4 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40
+              text-cyan-300 hover:bg-cyan-500/30 text-sm
+            "
+          >
+            Load
+          </button>
+        </div>
+      )}
+
+      {/* =================== PLAYER AREA ===================== */}
+      <div
+        className="
+          w-full max-w-3xl aspect-video rounded-xl
+          bg-white/10 border border-white/20
+          flex items-center justify-center text-gray-300 overflow-hidden
+        "
+      >
+        {!videoUrl ? (
+          <p className="text-sm text-gray-400">
+            {isHost
+              ? "Paste a video URL above to start the party"
+              : "Waiting for the host to load a video…"}
+          </p>
+        ) : unsupported ? (
+          <div className="p-4 text-center text-sm">
+            <p className="mb-1">Unsupported link</p>
+            <p className="text-gray-400">Use a direct video URL (.mp4)</p>
+          </div>
+        ) : (
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            className="w-full h-full object-contain bg-black"
+            controls={isHost}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onSeeked={handleSeek}
+            onLoadedMetadata={handleLoaded}
+          />
+        )}
+      </div>
+
+      {/* ================== CONTROL ROW ===================== */}
+      <div className="flex items-center justify-between w-full max-w-3xl mt-3 text-sm pb-3">
+
+        <span className="text-gray-400">
+          {isHost ? "You control playback" : "Synced viewer"}
+        </span>
+
+        <div className="flex items-center gap-3">
+
+          {/* Playback speed */}
+          {isHost && (
+            <select
+              value={playbackRate}
+              onChange={(e) => handleRate(Number(e.target.value))}
+              className="
+                bg-white/10 text-white text-xs rounded-lg px-2 py-1
+                border border-white/20 focus:ring-2 focus:ring-cyan-400
+              "
+            >
+              {[0.5, 1, 1.25, 1.5, 2].map((r) => (
+                <option key={r} value={r} className="bg-[#0a0f1f] text-white">
+                  {r}x
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Volume */}
+          <div className="flex items-center gap-2">
+            <i className="ri-volume-up-line text-lg" />
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={handleVol}
+              className="w-24"
+            />
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+Whiteboard.jsx
+import { useRef, useEffect, useState, useContext } from "react";
+import { SocketContext } from "../context/SocketContext";
+
+export default function Whiteboard({ partyId }) {
+  const canvasRef = useRef(null);
+  const socket = useContext(SocketContext);
+
+  // drawing state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [ctx, setCtx] = useState(null);
+  const prevPosRef = useRef({ x: 0, y: 0 });
+
+  // UI tools
+  const [color, setColor] = useState("cyan");
+  const [lineWidth, setLineWidth] = useState(3);
+
+  // Initialize / resize canvas
+  const resizeCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const parent = canvas.parentElement;
+    canvas.width = parent.clientWidth;
+    canvas.height = parent.clientHeight;
+
+    if (ctx) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = "round";
+    }
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas.getContext("2d");
+
+    setCtx(context);
+    resizeCanvas();
+
+    context.strokeStyle = color;
+    context.lineWidth = lineWidth;
+    context.lineCap = "round";
+
+    window.addEventListener("resize", resizeCanvas);
+    return () => window.removeEventListener("resize", resizeCanvas);
+  }, []);
+
+  // When tool settings change, update ctx live
+  useEffect(() => {
+    if (!ctx) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+  }, [color, lineWidth, ctx]);
+
+  // RECEIVE strokes + clear from server
+  useEffect(() => {
+    if (!socket || !ctx) return;
+
+    const drawStroke = (stroke) => {
+      ctx.beginPath();
+      ctx.moveTo(stroke.prevX, stroke.prevY);
+      ctx.lineTo(stroke.x, stroke.y);
+      ctx.stroke();
+    };
+
+    const handleState = ({ strokes }) => {
+      if (!Array.isArray(strokes)) return;
+      strokes.forEach(drawStroke);
+    };
+
+    const clear = () => {
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    };
+
+    socket.on("whiteboard:update", drawStroke);
+    socket.on("whiteboard:state", handleState);
+    socket.on("whiteboard:clear", clear);
+
+    return () => {
+      socket.off("whiteboard:update", drawStroke);
+      socket.off("whiteboard:state", handleState);
+      socket.off("whiteboard:clear", clear);
+    };
+  }, [socket, ctx]);
+
+  // Mouse helpers
+  const getPos = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const startDrawing = (e) => {
+    setIsDrawing(true);
+    prevPosRef.current = getPos(e);
+  };
+
+  const stopDrawing = () => setIsDrawing(false);
+
+  const draw = (e) => {
+    if (!isDrawing || !ctx) return;
+
+    const prev = prevPosRef.current;
+    const pos = getPos(e);
+
+    // local draw
+    ctx.beginPath();
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+
+    // send to server
+    socket.emit("whiteboard:draw", {
+      partyId,
+      stroke: {
+        prevX: prev.x,
+        prevY: prev.y,
+        x: pos.x,
+        y: pos.y,
+        color,
+        lineWidth,
+      },
+    });
+
+    prevPosRef.current = pos;
+  };
+
+  const clearBoard = () => {
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    socket.emit("whiteboard:clear", { partyId });
+  };
+
+  return (
+    <div
+      className="
+        flex-1 flex flex-col items-center w-full 
+        px-4 pt-4 pb-4 bg-black/40
+      "
+    >
+      {/* TOOLBAR */}
+      <div
+        className="
+          w-full max-w-3xl flex items-center justify-between
+          mb-3 px-2
+        "
+      >
+        <div className="flex gap-3 items-center">
+          {/* COLORS */}
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            className="w-10 h-8 rounded cursor-pointer"
+          />
+
+          {/* BRUSH SIZE */}
+          <select
+            value={lineWidth}
+            onChange={(e) => setLineWidth(Number(e.target.value))}
+            className="
+              bg-white/10 border border-white/20 
+              text-white text-xs rounded-lg px-2 py-1
+            "
+          >
+            {[2, 3, 5, 8, 12, 18].map((s) => (
+              <option key={s} value={s} className="bg-[#0a0f1f] text-white">
+                {s}px
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* CLEAR BUTTON */}
+        <button
+          onClick={clearBoard}
+          className="
+            px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/40 
+            text-red-200 hover:bg-red-500/30 transition backdrop-blur-xl text-sm
+          "
+        >
+          Clear
+        </button>
+      </div>
+
+      {/* CANVAS AREA */}
+      <div
+        className="
+          w-full max-w-3xl aspect-video 
+          rounded-xl border border-white/20 bg-white/5 backdrop-blur-xl
+          overflow-hidden relative
+        "
+      >
+        <canvas
+          ref={canvasRef}
+          onMouseDown={startDrawing}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onMouseMove={draw}
+          className="w-full h-full"
+        />
+      </div>
+    </div>
+  );
+}
+
+
+
+WindowPanel.jsx
+// Inline window area for mobile between media and bottom toolbar
+export default function WindowPanel({ open, content }) {
+  if (!open) return null;
+
+  return (
+    <div className="md:hidden flex-none border-t border-white/10 bg-[#050814]/95">
+      <div className="h-[55vh] max-h-[60vh] overflow-y-auto custom-scroll px-3 py-2 pb-17">
+        {content}
+      </div>
+    </div>
+  );
+}
+
+
+
+frontend/src/context:
+
+AuthContext.jsx
+import { createContext, useEffect, useState } from "react";
+
+export const AuthContext = createContext();
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // Load from storage ONCE
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    const storedToken = localStorage.getItem("token");
+
+    if (storedUser && storedToken) {
+      setUser(JSON.parse(storedUser));
+      setToken(storedToken);
+    }
+
+    setLoading(false);
+  }, []);
+
+  const login = (userData, jwt) => {
+    setUser(userData);
+    setToken(jwt);
+    localStorage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem("token", jwt);
+  };
+
+  const logout = () => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+
+
+SocketContext.jsx
+import { createContext, useEffect, useState } from "react";
+import { io } from "socket.io-client";
+
+export const SocketContext = createContext(null);
+
+export function SocketProvider({ children }) {
+  const [socket, setSocket] = useState(null);
+
+  useEffect(() => {
+    const s = io("http://localhost:5000", {
+      transports: ["websocket"],
+    });
+
+    setSocket(s);
+
+    return () => {
+      s.disconnect();
+    };
+  }, []);
+
+  return (
+    <SocketContext.Provider value={socket}>
+      {children}
+    </SocketContext.Provider>
+  );
+}
+
+
+
+frontend/src/data:
+
+avatars.js
+export const AVATARS = [
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Aiden",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Nolan",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Leah",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Mason",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Liliana",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Jameson",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Aidan",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Jade",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Adrian",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Kingston",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Ryker",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Easton",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Riley",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Sadie",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Alexander",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Ryan",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=George",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Jessica",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Christian",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Brooklynn",
+];
+
+
+
+frontend/src/hooks:
+
+useAuth.js
+import { useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
+
+export const useAuth = () => useContext(AuthContext);
+
+
+
+useSocket.js
+import { useContext } from "react";
+import { SocketContext } from "../context/SocketContext";
+
+export const useSocket = () => useContext(SocketContext);
+
+
+
+frontend/src/pages:
+
+CreateParty.jsx
+import { useState, useContext } from "react";
+import { createParty } from "../api/partyAPI";
+import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
+
+export default function CreateParty() {
+  const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  const [form, setForm] = useState({
+    name: "",
+    description: "",
+    isPrivate: false,
+    password: "",
+    maxParticipants: 50,
+    settings: {
+      enableChat: true,
+      enableAudio: true,
+      enableVideo: true,
+      enableWhiteboard: true,
+    },
+  });
+
+  const handleChange = (e) =>
+    setForm({ ...form, [e.target.name]: e.target.value });
+
+  const toggleSetting = (key) => {
+    setForm({
+      ...form,
+      settings: { ...form.settings, [key]: !form.settings[key] },
+    });
+  };
+
+  const submitForm = async (e) => {
+    e.preventDefault();
+
+    if (!form.name.trim()) return toast.error("Party name is required");
+    if (form.isPrivate && form.password.trim().length < 4)
+      return toast.error("Private party password must be at least 4 characters");
+
+    try {
+      const res = await createParty(form);
+
+      toast.success("Party created!");
+      navigate("/parties/join", { state: { party: res.data.party } });
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to create party");
+    }
+  };
+
+  return (
+    <div
+      className="
+      min-h-screen bg-gradient-to-br from-[#000000] via-[#0a0f1f] to-[#1b0f2f]
+      text-white px-6 pt-24 pb-12 flex justify-center
+    "
+    >
+      <form
+        onSubmit={submitForm}
+        className="
+        w-full max-w-xl p-8 rounded-2xl
+        bg-white/10 border border-white/20 backdrop-blur-xl
+        shadow-[0_0_35px_rgba(0,255,255,0.25)]
+        flex flex-col gap-6
+      "
+      >
+        <h1 className="text-3xl font-bold text-cyan-300 text-center">
+          Create Watch Party
+        </h1>
+
+        {/* Party Name */}
+        <input
+          name="name"
+          type="text"
+          placeholder="Party name"
+          value={form.name}
+          onChange={handleChange}
+          className="
+            p-3 rounded-xl bg-white/10 border border-white/20
+            text-white placeholder-gray-400
+          "
+          required
+        />
+
+        {/* Description */}
+        <textarea
+          name="description"
+          placeholder="Short description (optional)"
+          value={form.description}
+          onChange={handleChange}
+          className="
+            p-3 rounded-xl bg-white/10 border border-white/20
+            text-white placeholder-gray-400 h-28
+          "
+        ></textarea>
+
+        {/* Public / Private toggle */}
+        <div className="flex items-center justify-between mt-2">
+          <span className="text-gray-300">Make room private?</span>
+
+          <label className="flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.isPrivate}
+              onChange={(e) => setForm({ ...form, isPrivate: e.target.checked })}
+              className="hidden"
+            />
+            <div
+              className={`
+              w-12 h-6 rounded-full transition bg-white/20 relative
+              ${form.isPrivate ? "bg-purple-500/40" : ""}
+            `}
+            >
+              <div
+                className={`
+                w-5 h-5 bg-white rounded-full absolute top-[2px] transition
+                ${form.isPrivate ? "right-1" : "left-1"}
+              `}
+              ></div>
+            </div>
+          </label>
+        </div>
+
+        {/* Password Input */}
+        {form.isPrivate && (
+          <input
+            name="password"
+            type="password"
+            placeholder="Room password"
+            value={form.password}
+            onChange={handleChange}
+            className="
+              p-3 rounded-xl bg-white/10 border border-white/20
+              text-white placeholder-gray-400
+            "
+          />
+        )}
+
+        {/* Max Participants */}
+        <div className="flex items-center gap-3">
+          <span className="text-gray-300">Max Participants : </span>
+          <input
+            name="maxParticipants"
+            type="number"
+            min="1"
+            max="50"
+            value={form.maxParticipants}
+            onChange={handleChange}
+            placeholder="Max (50)"
+            className="
+              w-28 p-3 rounded-xl bg-white/10 border border-white/20
+              text-white placeholder-gray-400
+              appearance-none
+            "
+          />
+
+          <button
+            type="button"
+            onClick={() =>
+              setForm({
+                ...form,
+                maxParticipants: Math.min(50, Number(form.maxParticipants) + 1),
+              })
+            }
+            className="
+              px-3 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40
+              text-cyan-300 font-bold hover:bg-cyan-500/30 transition
+            "
+          >
+            ▲
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setForm({
+                ...form,
+                maxParticipants: Math.max(1, Number(form.maxParticipants) - 1),
+              })
+            }
+            className="
+              px-3 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40
+              text-cyan-300 font-bold hover:bg-cyan-500/30 transition
+            "
+          >
+            ▼
+          </button>
+        </div>
+
+        {/* Settings */}
+        <h3 className="text-xl text-purple-300 font-semibold mt-2">
+          Room Settings
+        </h3>
+
+        {[
+          ["enableChat", "Enable chat"],
+          ["enableAudio", "Allow microphone"],
+          ["enableVideo", "Allow camera"],
+          ["enableWhiteboard", "Enable whiteboard"],
+        ].map(([key, label]) => (
+          <label key={key} className="flex items-center justify-between cursor-pointer">
+            <span className="text-gray-300">{label}</span>
+
+            <input
+              type="checkbox"
+              checked={form.settings[key]}
+              onChange={() => toggleSetting(key)}
+              className="hidden"
+            />
+
+            <div
+              className={`
+                w-12 h-6 rounded-full transition bg-white/20 relative
+                ${form.settings[key] ? "bg-cyan-500/40" : ""}
+              `}
+            >
+              <div
+                className={`
+                  w-5 h-5 bg-white rounded-full absolute top-[2px] transition
+                  ${form.settings[key] ? "right-1" : "left-1"}
+                `}
+              ></div>
+            </div>
+          </label>
+        ))}
+
+        <button
+          type="submit"
+          className="
+            mt-4 py-3 rounded-xl
+            bg-cyan-500/20 border border-cyan-500/40
+            text-cyan-300 font-semibold
+            hover:bg-cyan-500/30 transition
+            shadow-[0_0_25px_rgba(0,255,255,0.25)]
+          "
+        >
+          Create Party
+        </button>
+      </form>
+    </div>
+  );
+}
+
+
+
+Feedback.jsx
+import { useState, useEffect } from "react";
+import { createFeedback, getFeedback } from "../api/feedbackAPI";
+import toast from "react-hot-toast";
+
+export default function FeedbackPage() {
+  const [message, setMessage] = useState("");
+  const [rating, setRating] = useState(5);
+  const [items, setItems] = useState([]);
+
+  const loadFeedback = async () => {
+    try {
+      const res = await getFeedback();
+      setItems(res.data.feedbacks || []);
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadFeedback();
+  }, []);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!message.trim()) return toast.error("Please write something");
+
+    try {
+      await createFeedback({ message, rating });
+      toast.success("Thanks for your feedback!");
+      setMessage("");
+      setRating(5);
+      loadFeedback();
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to send feedback");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#000] via-[#0a0f1f] to-[#1b0f2f] text-white px-6 pt-28 pb-12 flex justify-center">
+      <div className="w-full max-w-2xl p-8 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-xl shadow-[0_0_35px_rgba(0,255,255,0.25)] flex flex-col gap-6">
+        
+        <h1 className="text-3xl font-bold text-cyan-300 text-center">
+          Feedback & Ideas
+        </h1>
+        <p className="text-gray-300 text-sm text-center">
+          Share bugs, ideas, feature requests, or love letters to your own project. 💌
+        </p>
+
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="What would you like to share?"
+            className="p-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-gray-400 h-28"
+          />
+
+          {/* Rating select with proper dark theme */}
+          <div className="flex items-center gap-3">
+            <span className="text-gray-300 text-sm">Rating:</span>
+
+            <div className="relative">
+              <select
+                name="rating"
+                value={rating}
+                onChange={(e) => setRating(e.target.value)}
+                className="
+                  p-3 pr-10 rounded-xl bg-white/10 border border-white/20 
+                  text-white appearance-none
+                  focus:ring-2 focus:ring-cyan-400
+                  hover:bg-white/20 transition
+                "
+              >
+                {[5, 4, 3, 2, 1].map((r) => (
+                  <option
+                    key={r}
+                    value={r}
+                    style={{
+                      backgroundColor: "#0a0f1f",
+                      color: "white",
+                    }}
+                  >
+                    {r} / 5
+                  </option>
+                ))}
+              </select>
+
+              {/* Custom neon dropdown arrow */}
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-cyan-300 text-sm">
+                ▼
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="mt-2 py-3 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-semibold hover:bg-cyan-500/30 transition shadow-[0_0_25px_rgba(0,255,255,0.25)]"
+          >
+            Submit Feedback
+          </button>
+        </form>
+
+        {items.length > 0 && (
+          <div className="mt-6">
+            <h2 className="text-lg font-semibold text-purple-300 mb-2">
+              Recent Feedback
+            </h2>
+            <div className="flex flex-col gap-3 max-h-64 overflow-y-auto">
+              {items.map((f) => (
+                <div
+                  key={f._id}
+                  className="p-3 rounded-xl bg-white/10 border border-white/20"
+                >
+                  <div className="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>{new Date(f.createdAt).toLocaleString()}</span>
+                    <span>⭐ {f.rating}</span>
+                  </div>
+                  <p className="text-gray-100 text-sm">{f.message}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+Home.jsx
+export default function Home() {
+  return (
+    <div className="
+      min-h-screen text-white
+      bg-gradient-to-br from-[#050505] via-[#0a0f1f] to-[#1b0f2f]
+      flex flex-col items-center pt-28 px-6
+    ">
+      {/* HERO SECTION */}
+      <h1 className="
+        text-5xl md:text-7xl font-extrabold text-center
+        text-transparent bg-clip-text 
+        bg-gradient-to-r from-cyan-400 to-purple-500
+        drop-shadow-[0_0_25px_rgba(0,200,255,0.4)]
+        leading-tight
+      ">
+        Watch Together.
+        <br />
+        Learn. Share. Enjoy.
+      </h1>
+
+      <p className="text-lg md:text-xl text-gray-300 mt-6 max-w-2xl text-center">
+        Sync videos, share screens, collaborate on whiteboards, chat in real-time — 
+        experience movies, study sessions, and events together from anywhere.
+      </p>
+
+      <div className="mt-10 flex gap-4">
+        <a
+          href="/login"
+          className="
+            px-8 py-3 rounded-2xl text-lg
+            bg-cyan-500/20 border border-cyan-500/40
+            text-cyan-300 hover:bg-cyan-500/30 transition
+            shadow-[0_0_20px_rgba(0,255,255,0.3)]
+          "
+        >
+          Get Started →
+        </a>
+
+        <a
+          href="/register"
+          className="
+            px-8 py-3 rounded-2xl text-lg
+            bg-purple-600/20 border border-purple-500/40
+            text-purple-200 hover:bg-purple-600/30 transition
+            shadow-[0_0_20px_rgba(180,0,255,0.3)]
+          "
+        >
+          Create Account
+        </a>
+      </div>
+
+      {/* FEATURES SECTION */}
+      <div className="grid md:grid-cols-3 gap-8 mt-24 max-w-6xl w-full">
+        {[
+          {
+            title: "Live Sync Playback",
+            icon: "ri-play-circle-line",
+            desc: "Watch videos together with zero delay, perfectly in sync.",
+          },
+          {
+            title: "Real-Time Collaboration",
+            icon: "ri-pencil-ruler-2-line",
+            desc: "Whiteboard, chat, screen share — all in real-time.",
+          },
+          {
+            title: "Host Powerful Rooms",
+            icon: "ri-team-line",
+            desc: "Create public or private rooms with full host control.",
+          },
+        ].map((box, i) => (
+          <div
+            key={i}
+            className="
+              p-6 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-xl
+              shadow-[0_0_25px_rgba(0,255,255,0.1)] hover:bg-white/15 transition
+              flex flex-col items-center text-center gap-4
+            "
+          >
+            <i className={`${box.icon} text-4xl text-cyan-300`}></i>
+            <h3 className="text-xl font-semibold">{box.title}</h3>
+            <p className="text-gray-300 text-sm">{box.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* FOOTER */}
+      <footer className="mt-24 mb-10 text-gray-400 text-sm">
+        © {new Date().getFullYear()} WatchParty — A project idea by Alok Bhadauria
+      </footer>
+    </div>
+  );
+}
+
+
+
+JoinParty.jsx
+import { useLocation, useNavigate } from "react-router-dom";
+import { useState, useContext } from "react";
+import { verifyPartyPassword } from "../api/partyAPI";
+import { joinParticipant } from "../api/participantAPI";
+import { updateUser } from "../api/authAPI";
+import { AuthContext } from "../context/AuthContext";
+import toast from "react-hot-toast";
+
+export default function JoinParty() {
+  const { state } = useLocation();
+  const navigate = useNavigate();
+  const { user, token, login } = useContext(AuthContext);
+
+  const party = state?.party;
+
+  const [displayName, setDisplayName] = useState(user?.watchName || user?.username || "");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  if (!party) return <NotFound />;
+
+  const handleJoin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      // 🔐 verify password
+      if (party.isPrivate) {
+        const res = await verifyPartyPassword({
+          code: party.code,
+          password,
+        });
+        if (!res.data.ok) throw new Error("Invalid password");
+      }
+
+      // 🔄 update user's display name in profile
+      const userUpdate = await updateUser(user.id, { watchName: displayName });
+      login(userUpdate.data.user, token);
+
+      // 👤 join as participant (creates or reuses participant)
+      const joinRes = await joinParticipant({
+        partyId: party._id,
+        displayName,
+      });
+
+      // 💾 Save active party info for auto-rejoin
+      localStorage.setItem(
+        "activeParty",
+        JSON.stringify({
+          partyId: party._id,
+          participantId: joinRes.data.participant._id,
+          displayName,
+        })
+      );
+
+      toast.success("Joined party!");
+      navigate("/party/" + party._id, {
+        state: {
+          party,
+          participant: joinRes.data.participant,
+        },
+      });
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Unable to join");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#000] via-[#0a0f1f] to-[#1b0f2f] text-white px-4 pt-28">
+      <form
+        onSubmit={handleJoin}
+        className="w-full max-w-md p-8 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-xl shadow-xl flex flex-col gap-6"
+      >
+        <h2 className="text-3xl font-bold text-cyan-300 text-center">Join Party</h2>
+
+        <p className="text-gray-300 text-center">
+          <span className="text-purple-300">{party.name}</span>
+          <br />
+          <small className="text-gray-400">Code: {party.code}</small>
+        </p>
+
+        <span className="text-gray-300 text-center">ENTER DISPLAY NAME </span>
+        <input
+          type="text"
+          placeholder="Enter display name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          required
+          className="p-3 rounded-xl bg-white/10 border border-white/20 text-white"
+        />
+
+        {party.isPrivate && (
+          <input
+            type="password"
+            placeholder="Room password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="p-3 rounded-xl bg-white/10 border border-white/20 text-white"
+          />
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="py-3 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 transition"
+        >
+          {loading ? "Joining..." : "Join Party"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function NotFound() {
+  return <div className="text-white text-center mt-40 text-xl">No party selected.</div>;
+}
+
+
+
+Login.jsx
+import { useState, useContext } from "react";
+import { loginUser } from "../api/authAPI";
+import { AuthContext } from "../context/AuthContext";
+import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
+
+export default function Login() {
+  const navigate = useNavigate();
+  const { login } = useContext(AuthContext);
+
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+
+  const submitLogin = async (e) => {
+    e.preventDefault();
+
+    try {
+      const res = await loginUser({ identifier, password });
+      login(res.data.user, res.data.token);
+      toast.success("Welcome back!");
+      navigate("/profile");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Login failed");
+    }
+  };
+
+  return (
+    <div
+      className="
+      min-h-screen flex items-center justify-center
+      bg-gradient-to-br from-[#000000] via-[#0a0f1f] to-[#1b0f2f]
+      text-white pt-16 px-4
+    "
+    >
+      <div
+        className="
+        w-full max-w-md p-8 rounded-2xl
+        bg-white/10 border border-white/20 backdrop-blur-xl
+        shadow-[0_0_40px_rgba(0,255,255,0.2)]
+      "
+      >
+        <h2 className="text-3xl font-semibold text-cyan-300 text-center">
+          Login
+        </h2>
+
+        <form onSubmit={submitLogin} className="flex flex-col gap-4 mt-6">
+          <input
+            type="text"
+            placeholder="Email or Username"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            className="
+              p-3 rounded-xl bg-white/10 border border-white/20
+              text-white placeholder-gray-400 w-full
+            "
+            required
+          />
+
+          <div className="relative w-full">
+            <input
+              type={showPass ? "text" : "password"}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="
+                p-3 rounded-xl bg-white/10 border border-white/20
+                text-white placeholder-gray-400 w-full
+              "
+              required
+            />
+
+            <i
+              onClick={() => setShowPass(!showPass)}
+              className={`
+                absolute right-4 top-3 text-xl cursor-pointer 
+                ${showPass ? "ri-eye-off-line" : "ri-eye-line"}
+              `}
+            ></i>
+          </div>
+
+          <button
+            className="
+            mt-2 py-3 rounded-xl
+            bg-cyan-500/20 border border-cyan-500/40
+            text-cyan-300 font-semibold
+            backdrop-blur-xl hover:bg-cyan-500/30 transition
+            shadow-[0_0_25px_rgba(0,255,255,0.25)]
+          "
+          >
+            Login
+          </button>
+        </form>
+
+        <p className="mt-4 text-center text-gray-300">
+          Don't have an account?
+          <a href="/register" className="text-purple-400 hover:underline ml-1">
+            Register
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
+
+PartyRoom.jsx
+import { useEffect, useContext, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { SocketContext } from "../context/SocketContext";
+
+import VideoPlayer from "../components/VideoPlayer";
+import Whiteboard from "../components/Whiteboard";
+import AVPanel from "../components/AVPanel";
+import ChatBox from "../components/ChatBox";
+import ParticipantList from "../components/ParticipantList";
+
+import WindowPanel from "../components/WindowPanel";
+import MobileToolbar from "../components/MobileToolbar";
+
+import toast from "react-hot-toast";
+import { leaveParticipant } from "../api/participantAPI";
+
+export default function PartyRoom() {
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const { state } = useLocation();
+
+  const socket = useContext(SocketContext);
+
+  const party = state?.party;
+  const participant = state?.participant;
+
+  const [participants, setParticipants] = useState([]);
+  const [view, setView] = useState("video"); // "video" | "whiteboard"
+  const [mobilePanel, setMobilePanel] = useState("chat"); // "av" | "chat" | "participants"
+
+  const isMobile =
+    typeof window !== "undefined" ? window.innerWidth < 768 : false;
+
+  // JOIN ROOM + LISTEN
+  useEffect(() => {
+    if (!party || !participant) {
+      navigate("/parties");
+      return;
+    }
+
+    if (!socket) return;
+
+    socket.emit("join-room", {
+      partyId: party._id,
+      participantId: participant._id,
+      displayName: participant.displayName,
+    });
+
+    const handleParticipants = (list) => {
+      setParticipants(list || []);
+    };
+
+    socket.on("participants-update", handleParticipants);
+
+    return () => {
+      socket.emit("leave-room", {
+        partyId: party._id,
+        participantId: participant._id,
+      });
+
+      leaveParticipant(participant._id).catch(() => {});
+
+      socket.off("participants-update", handleParticipants);
+    };
+  }, [socket, party, participant, navigate]);
+
+  const leaveRoom = async () => {
+    try {
+      await leaveParticipant(participant._id);
+    } catch {}
+    toast("You left the party");
+    navigate("/parties");
+  };
+
+  const copyPartyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(party.code);
+      toast.success("Room code copied");
+    } catch {
+      toast.error("Could not copy code");
+    }
+  };
+
+  if (!party || !participant) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-white bg-gradient-to-br from-[#000] via-[#0a0f1f] to-[#1b0f2f]">
+        Loading...
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col text-white bg-gradient-to-br from-[#000] via-[#0a0f1f] to-[#1b0f2f] pt-15">
+      {/* ====================== DESKTOP LAYOUT (NEW GRID) ====================== */}
+      {!isMobile && (
+        // OUTER WRAPPER: fixed height relative to viewport, like WindowPanel
+        <div className="hidden md:block flex-1 min-h-0 px-4 pb-4 pt-3">
+          <div
+            className="
+              h-[calc(100vh-5rem)]  /* adjust this if you want more/less space under navbar */
+              min-h-0
+              grid gap-4
+              grid-cols-[2fr_1fr]   /* Left 2/3, Right 1/3 */
+              grid-rows-[1.2fr_0.8fr]   /* Top and Bottom equal height */
+            "
+          >
+            {/* LT — MEDIA (Row 1, Col 1) */}
+            <div className="rounded-2xl bg-white/5 border border-white/15 backdrop-blur-xl flex flex-col overflow-hidden">
+              {/* Media Area */}
+              <div className="flex-1 min-h-0 relative overflow-hidden pb-10">
+                {view === "video" ? (
+                  <VideoPlayer party={party} participant={participant} />
+                ) : (
+                  <Whiteboard partyId={party._id} />
+                )}
+              </div>
+
+              {/* Video / Whiteboard / Code buttons */}
+              <div className="flex flex-wrap gap-3 justify-center items-center px-4 py-2 border-t border-white/10 bg-white/10">
+                <button
+                  onClick={() => setView("video")}
+                  className={`px-4 py-2 rounded-xl border flex items-center gap-2 text-sm ${
+                    view === "video"
+                      ? "border-cyan-500 bg-cyan-500/20 text-cyan-300"
+                      : "border-white/20 bg-white/5 text-gray-300"
+                  }`}
+                >
+                  <i className="ri-movie-2-line" />
+                  <span>Video</span>
+                </button>
+
+                <button
+                  onClick={() => setView("whiteboard")}
+                  className={`px-4 py-2 rounded-xl border flex items-center gap-2 text-sm ${
+                    view === "whiteboard"
+                      ? "border-purple-500 bg-purple-500/20 text-purple-300"
+                      : "border-white/20 bg-white/5 text-gray-300"
+                  }`}
+                >
+                  <i className="ri-pencil-ruler-2-line" />
+                  <span>Whiteboard</span>
+                </button>
+
+                <button
+                  onClick={copyPartyCode}
+                  className="
+                    px-4 py-2 rounded-xl border flex items-center gap-2 text-sm
+                    border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                    hover:bg-emerald-500/20 transition
+                  "
+                >
+                  <i className="ri-key-2-line" />
+                  <span className="hidden sm:inline">Room Code:</span>
+                  <span className="font-mono text-xs sm:text-sm">
+                    {party.code}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* RT — CHAT (Row 1, Col 2) */}
+            <div className="rounded-2xl flex flex-col overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
+              <ChatBox
+                partyId={party._id}
+                participant={participant}
+                partyName={party.name}
+              />
+            </div>
+
+            {/* LB — AV PANEL (Row 2, Col 1) */}
+            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
+              <AVPanel
+                partyId={party._id}
+                participants={participants}
+                onLeave={leaveRoom}
+                showLeaveButton={!isMobile}
+              />
+            </div>
+
+            {/* RB — PARTICIPANTS (Row 2, Col 2) */}
+            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
+              <ParticipantList participants={participants} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================== MOBILE LAYOUT (UNCHANGED) ====================== */}
+      {isMobile && (
+        <>
+          {/* MAIN MEDIA PANEL ON MOBILE */}
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 pb-2">
+              {view === "video" ? (
+                <VideoPlayer party={party} participant={participant} />
+              ) : (
+                <Whiteboard partyId={party._id} />
+              )}
+            </div>
+
+            {/* VIEW SWITCH + PARTY CODE */}
+            <div className="flex flex-wrap gap-3 justify-center items-center px-3 py-2 border-t border-white/10 bg-white/10">
+              <button
+                onClick={() => setView("video")}
+                className={`px-3 py-2 rounded-xl border flex items-center gap-2 text-xs ${
+                  view === "video"
+                    ? "border-cyan-500 bg-cyan-500/20 text-cyan-300"
+                    : "border-white/20 bg-white/5 text-gray-300"
+                }`}
+              >
+                <i className="ri-movie-2-line" />
+                <span>Video</span>
+              </button>
+
+              <button
+                onClick={() => setView("whiteboard")}
+                className={`px-3 py-2 rounded-xl border flex items-center gap-2 text-xs ${
+                  view === "whiteboard"
+                    ? "border-purple-500 bg-purple-500/20 text-purple-300"
+                    : "border-white/20 bg-white/5 text-gray-300"
+                }`}
+              >
+                <i className="ri-pencil-ruler-2-line" />
+                <span>Whiteboard</span>
+              </button>
+
+              <button
+                onClick={copyPartyCode}
+                className="
+                  px-3 py-2 rounded-xl border flex items-center gap-2 text-[11px]
+                  border-emerald-500/40 bg-emerald-500/10 text-emerald-200
+                  hover:bg-emerald-500/20 transition
+                "
+              >
+                <i className="ri-key-2-line" />
+                <span>Code:</span>
+                <span className="font-mono">{party.code}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* MOBILE WINDOW PANEL (AV / CHAT / PARTICIPANTS) */}
+          <WindowPanel
+            open={!!mobilePanel}
+            onClose={() => setMobilePanel(null)}
+            content={
+              mobilePanel === "av" ? (
+                <AVPanel
+                  partyId={party._id}
+                  participants={participants}
+                  onLeave={leaveRoom}
+                />
+              ) : mobilePanel === "chat" ? (
+                <ChatBox
+                  partyId={party._id}
+                  participant={participant}
+                  partyName={party.name}
+                  compact
+                />
+              ) : mobilePanel === "participants" ? (
+                <ParticipantList participants={participants} compact />
+              ) : null
+            }
+          />
+
+          {/* MOBILE TOOLBAR (with existing round leave button etc.) */}
+          <MobileToolbar
+            participantsCount={participants.length}
+            onSelect={(key) => setMobilePanel(key)}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+
+
+Profile.jsx
+import { useContext, useState } from "react";
+import { AuthContext } from "../context/AuthContext";
+import { updateUser } from "../api/authAPI";
+import toast from "react-hot-toast";
+import { AVATARS } from "../data/avatars";
+import { changePassword as changePasswordAPI } from "../api/authAPI";
+
+export default function Profile() {
+  const { user, token, login } = useContext(AuthContext);
+
+  const [form, setForm] = useState({
+    name: user?.name || "",
+    username: user?.username || "",
+    email: user?.email || "",
+    watchName: user?.watchName || "",
+    avatar: user?.avatar || AVATARS[0],
+  });
+
+  const [passwords, setPasswords] = useState({
+    oldPass: "",
+    newPass: "",
+    confirmNew: "",
+  });
+
+  const handleChange = (e) =>
+    setForm({ ...form, [e.target.name]: e.target.value });
+
+  const handlePasswordChange = (e) =>
+    setPasswords({ ...passwords, [e.target.name]: e.target.value });
+
+  const selectAvatar = (url) => {
+    setForm({ ...form, avatar: url });
+  };
+
+  const saveProfile = async () => {
+    try {
+      const res = await updateUser(user.id, form);
+      login(res.data.user, token);
+      toast.success("Profile updated!");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Update failed");
+    }
+  };
+
+  const changePassword = async () => {
+    if (passwords.newPass !== passwords.confirmNew)
+      return toast.error("Passwords do not match");
+
+    if (passwords.newPass.length < 6)
+      return toast.error("New password must be at least 6 characters");
+
+    try {
+      await changePasswordAPI({
+        oldPassword: passwords.oldPass,
+        newPassword: passwords.newPass,
+      });
+
+      toast.success("Password updated successfully");
+
+      setPasswords({
+        oldPass: "",
+        newPass: "",
+        confirmNew: "",
+      });
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to update password");
+    }
+  };
+
+  return (
+    <div
+      className="
+      min-h-screen flex items-center justify-center
+      bg-gradient-to-br from-[#000000] via-[#0a0f1f] to-[#1b0f2f]
+      text-white px-4 pt-24
+    "
+    >
+      <div
+        className="
+        w-full max-w-3xl p-8 rounded-2xl
+        bg-white/10 border border-white/20 backdrop-blur-xl
+        shadow-[0_0_40px_rgba(0,255,255,0.2)]
+        flex flex-col gap-8
+      "
+      >
+        <h2 className="text-3xl font-semibold text-cyan-300 text-center">
+          Your Profile
+        </h2>
+
+        {/* Top section: Avatar + Basic info */}
+        <div className="flex flex-col md:flex-row gap-8">
+          {/* Avatar & selection */}
+          <div className="md:w-1/3 flex flex-col items-center gap-4">
+            <img
+              src={form.avatar || AVATARS[0]}
+              className="w-28 h-28 rounded-full object-cover border border-white/30 shadow-lg"
+            />
+            <p className="text-sm text-gray-300">
+              Choose an avatar from the list below
+            </p>
+          </div>
+
+          {/* Basic info */}
+          <div className="md:flex-1 flex flex-col gap-4">
+            {["name", "username", "email", "watchName"].map((field) => (
+              <input
+                key={field}
+                name={field}
+                type={field === "email" ? "email" : "text"}
+                value={form[field]}
+                placeholder={field}
+                onChange={handleChange}
+                className="
+                  p-3 rounded-xl bg-white/10 border border-white/20
+                  text-white placeholder-gray-400
+                "
+              />
+            ))}
+
+            <button
+              onClick={saveProfile}
+              className="
+                py-3 rounded-xl w-full
+                bg-cyan-500/20 border border-cyan-500/40
+                text-cyan-300 font-semibold
+                backdrop-blur-xl hover:bg-cyan-500/30 transition
+                shadow-[0_0_25px_rgba(0,255,255,0.25)]
+              "
+            >
+              Save Profile
+            </button>
+          </div>
+        </div>
+
+        {/* Avatar grid */}
+        <div>
+          <h3 className="text-xl font-semibold text-purple-300 mb-3">
+            Choose an Avatar
+          </h3>
+          <div className="grid grid-cols-5 gap-3">
+            {AVATARS.map((url) => (
+              <button
+                key={url}
+                type="button"
+                onClick={() => selectAvatar(url)}
+                className={`
+                  rounded-xl border p-1
+                  ${form.avatar === url
+                    ? "border-cyan-400 bg-cyan-500/20"
+                    : "border-white/20 bg-white/5 hover:bg-white/10"
+                  }
+                `}
+              >
+                <img
+                  src={url}
+                  className="w-full h-full rounded-lg object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Change password section */}
+        <div>
+          <h3 className="text-xl font-semibold text-purple-300 mb-3">
+            Change Password
+          </h3>
+
+          <div className="flex flex-col md:flex-row gap-3">
+            <input
+              name="oldPass"
+              type="password"
+              placeholder="Old password"
+              value={passwords.oldPass}
+              onChange={handlePasswordChange}
+              className="
+                flex-1 p-3 rounded-xl bg-white/10 border border-white/20
+                text-white placeholder-gray-400
+              "
+            />
+            <input
+              name="newPass"
+              type="password"
+              placeholder="New password"
+              value={passwords.newPass}
+              onChange={handlePasswordChange}
+              className="
+                flex-1 p-3 rounded-xl bg-white/10 border border-white/20
+                text-white placeholder-gray-400
+              "
+            />
+            <input
+              name="confirmNew"
+              type="password"
+              placeholder="Confirm new password"
+              value={passwords.confirmNew}
+              onChange={handlePasswordChange}
+              className="
+                flex-1 p-3 rounded-xl bg-white/10 border border-white/20
+                text-white placeholder-gray-400
+              "
+            />
+          </div>
+
+          <button
+            onClick={changePassword}
+            className="
+              mt-3 py-3 rounded-xl w-full
+              bg-purple-600/30 border border-purple-500/40
+              text-purple-200 font-semibold
+              hover:bg-purple-600/40 transition
+              shadow-[0_0_25px_rgba(180,0,255,0.25)]
+            "
+          >
+            Update Password
+          </button>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+Register.jsx
+import { useState, useContext } from "react";
+import { registerUser } from "../api/authAPI";
+import { AuthContext } from "../context/AuthContext";
+import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
+
+export default function Register() {
+  const navigate = useNavigate();
+  const { login } = useContext(AuthContext);
+
+  const [form, setForm] = useState({
+    name: "",
+    username: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    watchName: "",
+  });
+
+  const [showPass, setShowPass] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleChange = (e) => {
+    setForm({
+      ...form,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const submitRegister = async (e) => {
+    e.preventDefault();
+
+    // ❗ Password match check
+    if (form.password !== form.confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    try {
+      const { confirmPassword, ...payload } = form;
+      const res = await registerUser(payload);
+
+      login(res.data.user, res.data.token);
+      toast.success("Account created!");
+      navigate("/profile");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Registration failed");
+    }
+  };
+
+  return (
+    <div
+      className="
+      min-h-screen flex items-center justify-center
+      bg-gradient-to-br from-[#000000] via-[#0a0f1f] to-[#1b0f2f]
+      text-white pt-16 px-4
+    "
+    >
+      <div
+        className="
+        w-full max-w-md p-8 rounded-2xl
+        bg-white/10 border border-white/20 backdrop-blur-xl
+        shadow-[0_0_40px_rgba(0,255,255,0.2)]
+      "
+      >
+        <h2 className="text-3xl font-semibold text-cyan-300 text-center">
+          Create Account
+        </h2>
+
+        <form onSubmit={submitRegister} className="flex flex-col gap-4 mt-6">
+          {/* Name */}
+          <input
+            name="name"
+            type="text"
+            placeholder="Full Name"
+            value={form.name}
+            onChange={handleChange}
+            className="
+              p-3 rounded-xl bg-white/10 border border-white/20
+              text-white placeholder-gray-400
+            "
+            required
+          />
+
+          {/* Username */}
+          <input
+            name="username"
+            type="text"
+            placeholder="Username"
+            value={form.username}
+            onChange={handleChange}
+            className="
+              p-3 rounded-xl bg-white/10 border border-white/20
+              text-white placeholder-gray-400
+            "
+            required
+          />
+
+          {/* Email */}
+          <input
+            name="email"
+            type="email"
+            placeholder="Email"
+            value={form.email}
+            onChange={handleChange}
+            className="
+              p-3 rounded-xl bg-white/10 border border-white/20
+              text-white placeholder-gray-400
+            "
+            required
+          />
+
+          {/* Password */}
+          <div className="relative">
+            <input
+              name="password"
+              type={showPass ? "text" : "password"}
+              placeholder="Password"
+              value={form.password}
+              onChange={handleChange}
+              className="
+                p-3 rounded-xl bg-white/10 border border-white/20
+                text-white placeholder-gray-400 w-full
+              "
+              required
+            />
+
+            <i
+              onClick={() => setShowPass(!showPass)}
+              className={`
+                absolute right-4 top-3 text-xl cursor-pointer 
+                ${showPass ? "ri-eye-off-line" : "ri-eye-line"}
+              `}
+            ></i>
+          </div>
+
+          {/* Confirm Password */}
+          <div className="relative">
+            <input
+              name="confirmPassword"
+              type={showConfirm ? "text" : "password"}
+              placeholder="Confirm Password"
+              value={form.confirmPassword}
+              onChange={handleChange}
+              className="
+                p-3 rounded-xl bg-white/10 border border-white/20
+                text-white placeholder-gray-400 w-full
+              "
+              required
+            />
+
+            <i
+              onClick={() => setShowConfirm(!showConfirm)}
+              className={`
+                absolute right-4 top-3 text-xl cursor-pointer 
+                ${showConfirm ? "ri-eye-off-line" : "ri-eye-line"}
+              `}
+            ></i>
+          </div>
+
+          {/* WatchName */}
+          <input
+            name="watchName"
+            type="text"
+            placeholder="Display Name (optional)"
+            value={form.watchName}
+            onChange={handleChange}
+            className="
+              p-3 rounded-xl bg-white/10 border border-white/20
+              text-white placeholder-gray-400
+            "
+          />
+
+          {/* Submit */}
+          <button
+            className="
+              mt-2 py-3 rounded-xl
+              bg-cyan-500/20 border border-cyan-500/40
+              text-cyan-300 font-semibold
+              backdrop-blur-xl hover:bg-cyan-500/30 transition
+              shadow-[0_0_25px_rgba(0,255,255,0.25)]
+            "
+          >
+            Register
+          </button>
+        </form>
+
+        <p className="mt-4 text-center text-gray-300">
+          Already have an account?
+          <a href="/login" className="text-purple-400 hover:underline ml-1">
+            Login
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
+
+WatchParties.jsx
+import { useEffect, useState } from "react";
+import { getPublicParties } from "../api/partyAPI";
+import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
+
+export default function WatchParties() {
+  const navigate = useNavigate();
+
+  const [parties, setParties] = useState([]);
+  const [filtered, setFiltered] = useState([]);
+  const [searchCode, setSearchCode] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const fetchParties = async () => {
+    try {
+      const res = await getPublicParties();
+      const list = res.data.parties || [];
+      setParties(list);
+      setFiltered(list);
+    } catch {
+      toast.error("Failed to fetch parties");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchParties();
+  }, []);
+
+  const doSearch = () => {
+    if (!searchCode.trim()) return setFiltered(parties);
+    setFiltered(parties.filter((p) => p.code.toLowerCase().includes(searchCode.toLowerCase())));
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#000] via-[#0a0f1f] to-[#1b0f2f] text-white px-6 pt-28 pb-12">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-cyan-300">Active Watch Parties</h1>
+
+        <button
+          onClick={() => navigate("/parties/create")}
+          className="px-6 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 transition"
+        >
+          + Create Party
+        </button>
+      </div>
+
+      {/* Search bar */}
+      <div className="flex gap-3 mb-6">
+        <input
+          value={searchCode}
+          onChange={(e) => setSearchCode(e.target.value)}
+          placeholder="Search by party code"
+          className="flex-1 p-3 rounded-xl bg-white/10 border border-white/20 text-white"
+        />
+        <button
+          onClick={doSearch}
+          className="px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-200 hover:bg-purple-500/30"
+        >
+          Search
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-gray-300 text-center">Loading parties...</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-gray-400 text-center text-lg mt-6">No parties found.</p>
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((p) => (
+            <div
+              key={p._id}
+              className="p-6 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 backdrop-blur-xl shadow-lg flex flex-col gap-3"
+            >
+              <div className="flex justify-between">
+                <h2 className="text-2xl font-semibold text-cyan-300">{p.name}</h2>
+                {p.isPrivate && <i className="ri-lock-fill text-purple-300 text-xl"></i>}
+              </div>
+
+              <p className="text-gray-300 text-sm">{p.description || "No description"}</p>
+
+              <div className="flex justify-between text-sm text-gray-400 mt-2">
+                <span>
+                  <i className="ri-user-line mr-1"></i>
+                  Host: {p.host?.username}
+                </span>
+                <span>
+                  <i className="ri-group-line mr-1"></i>
+                  {p.participantsCount} joined
+                </span>
+              </div>
+
+              <button
+                onClick={() => navigate("/parties/join", { state: { party: p } })}
+                className="mt-3 py-2 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-200 hover:bg-purple-500/30 transition"
+              >
+                Join Party
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+frontend/src:
+
+App.jsx
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
+
+import Navbar from "./components/Navbar";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+// Pages
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Profile from "./pages/Profile";
+import WatchParties from "./pages/WatchParties";
+import CreateParty from "./pages/CreateParty";
+import JoinParty from "./pages/JoinParty";
+import PartyRoom from "./pages/PartyRoom";
+import FeedbackPage from "./pages/Feedback";
+
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      {/* Global Navbar */}
+      <Navbar />
+
+      {/* Toast Notifications */}
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          style: {
+            background: "rgba(20, 20, 30, 0.8)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            backdropFilter: "blur(10px)",
+            color: "#fff",
+            borderRadius: "12px",
+          },
+        }}
+      />
+
+      {/* Routes */}
+      <Routes>
+        <Route path="/" element={<Home />} />
+
+        {/* Auth */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
+        {/* Protected Routes */}
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/feedback"
+          element={
+            <ProtectedRoute>
+              <FeedbackPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/parties"
+          element={
+            <ProtectedRoute>
+              <WatchParties />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/parties/create"
+          element={
+            <ProtectedRoute>
+              <CreateParty />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/parties/join"
+          element={
+            <ProtectedRoute>
+              <JoinParty />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/party/:id"
+          element={
+            <ProtectedRoute>
+              <PartyRoom />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+
+
+index.css
+@import "tailwindcss";
+
+/* Remove number input arrows (Chrome, Edge, Safari) */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Chat scrollbars */
+.custom-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.6) transparent;
+}
+
+.custom-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.6); /* slate-400-ish */
+  border-radius: 999px;
+}
+
+@keyframes fade-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0px);
+  }
+}
+
+.animate-fade-slide-in {
+  animation: fade-slide-in 0.25s ease-out forwards;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slideUp {
+  animation: slideUp 0.28s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out;
+}
+
+
+
+main.jsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+import { AuthProvider } from "./context/AuthContext";
+import { SocketProvider } from "./context/SocketContext";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <AuthProvider>
+      <SocketProvider>
+        <App />
+      </SocketProvider>
+    </AuthProvider>
+  </React.StrictMode>
+);
+
+
+
+frontend:
+
+index.html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+
+    <!-- Responsive -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>WatchParty</title>
+
+    <!-- Remix Icons -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css"
+      rel="stylesheet"
+    />
+  </head>
+
+  <body>
+    <div id="root"></div>
+
+    <!-- Vite entry file -->
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+
+
+
+package.json
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.17",
+    "axios": "^1.13.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-hot-toast": "^2.6.0",
+    "react-router-dom": "^7.10.1",
+    "socket.io-client": "^4.8.1",
+    "tailwindcss": "^4.1.17",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "vite": "^7.2.4"
+  }
+}
+
+
+
