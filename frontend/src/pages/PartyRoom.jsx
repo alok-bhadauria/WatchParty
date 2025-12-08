@@ -24,18 +24,15 @@ export default function PartyRoom() {
   const party = state?.party;
   const participant = state?.participant;
 
-  // This will hold the participant document returned by the backend (with _id)
   const [dbParticipant, setDbParticipant] = useState(null);
-
   const [participants, setParticipants] = useState([]);
-  const [view, setView] = useState("video"); // "video" | "whiteboard"
-  const [mobilePanel, setMobilePanel] = useState("chat"); // "av" | "chat" | "participants"
+  const [view, setView] = useState("video");
+  const [mobilePanel, setMobilePanel] = useState("chat");
 
   const isMobile =
     typeof window !== "undefined" ? window.innerWidth < 768 : false;
 
-
-  // Ensure we have a participant document in DB (with _id)
+  // Join backend participant record
   useEffect(() => {
     if (!party || !participant) {
       navigate("/parties");
@@ -53,9 +50,7 @@ export default function PartyRoom() {
           isAnonymous: participant.isAnonymous ?? true,
         });
 
-        if (!cancelled) {
-          setDbParticipant(res.data.participant); // has _id
-        }
+        if (!cancelled) setDbParticipant(res.data.participant);
       } catch (err) {
         toast.error("Could not join party");
         navigate("/parties");
@@ -67,11 +62,9 @@ export default function PartyRoom() {
     };
   }, [party, participant, navigate]);
 
-
-  // JOIN ROOM + LISTEN (Socket) — after we have dbParticipant from backend
+  // Socket join
   useEffect(() => {
-    if (!party || !dbParticipant) return;
-    if (!socket) return;
+    if (!party || !dbParticipant || !socket) return;
 
     socket.emit("join-room", {
       partyId: party._id,
@@ -92,17 +85,13 @@ export default function PartyRoom() {
       });
 
       leaveParticipant(dbParticipant._id).catch(() => {});
-
       socket.off("participants-update", handleParticipants);
     };
   }, [socket, party, dbParticipant]);
 
-
   const leaveRoom = async () => {
     try {
-      if (dbParticipant?._id) {
-        await leaveParticipant(dbParticipant._id);
-      }
+      if (dbParticipant?._id) await leaveParticipant(dbParticipant._id);
     } catch {}
     toast("You left the party");
     navigate("/parties");
@@ -127,23 +116,23 @@ export default function PartyRoom() {
 
   return (
     <div className="min-h-screen flex flex-col text-white bg-gradient-to-br from-[#000] via-[#0a0f1f] to-[#1b0f2f] pt-15">
-      {/* ====================== DESKTOP LAYOUT (NEW GRID) ====================== */}
+      
+      {/* ======================== DESKTOP (SCROLLABLE LAYOUT) ======================== */}
       {!isMobile && (
-        // OUTER WRAPPER: fixed height relative to viewport, like WindowPanel
-        <div className="hidden md:block flex-1 min-h-0 px-4 pb-4 pt-3">
+        <div className="hidden md:block flex-1 px-4 pb-4 pt-3 overflow-y-auto">
           <div
             className="
-              h-[calc(100vh-5rem)]  /* adjust this if you want more/less space under navbar */
-              min-h-0
               grid gap-4
-              grid-cols-[2fr_1fr]   /* Left 2/3, Right 1/3 */
-              grid-rows-[1.2fr_0.8fr]   /* Top and Bottom equal height */
+              grid-cols-[2fr_1fr]
+              grid-rows-[1.2fr_0.8fr]
+              auto-rows-max
+              min-h-fit
             "
           >
-            {/* LT — MEDIA (Row 1, Col 1) */}
-            <div className="rounded-2xl bg-white/5 border border-white/15 backdrop-blur-xl flex flex-col overflow-hidden">
-              {/* Media Area */}
-              <div className="flex-1 min-h-0 relative overflow-hidden pb-10">
+            {/* ================= LEFT TOP — MEDIA ================= */}
+            <div className="rounded-2xl bg-white/5 border border-white/15 backdrop-blur-xl flex flex-col min-h-fit overflow-hidden">
+              
+              <div className="flex-1 min-h-fit relative overflow-hidden pb-10">
                 {view === "video" ? (
                   <VideoPlayer party={party} participant={dbParticipant} />
                 ) : (
@@ -151,7 +140,6 @@ export default function PartyRoom() {
                 )}
               </div>
 
-              {/* Video / Whiteboard / Code buttons */}
               <div className="flex flex-wrap gap-3 justify-center items-center px-4 py-2 border-t border-white/10 bg-white/10">
                 <button
                   onClick={() => setView("video")}
@@ -187,15 +175,13 @@ export default function PartyRoom() {
                 >
                   <i className="ri-key-2-line" />
                   <span className="hidden sm:inline">Room Code:</span>
-                  <span className="font-mono text-xs sm:text-sm">
-                    {party.code}
-                  </span>
+                  <span className="font-mono text-xs sm:text-sm">{party.code}</span>
                 </button>
               </div>
             </div>
 
-            {/* RT — CHAT (Row 1, Col 2) */}
-            <div className="rounded-2xl flex flex-col overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
+            {/* ================= RIGHT TOP — CHAT ================= */}
+            <div className="rounded-2xl flex flex-col overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-fit">
               <ChatBox
                 partyId={party._id}
                 participant={dbParticipant}
@@ -203,28 +189,29 @@ export default function PartyRoom() {
               />
             </div>
 
-            {/* LB — AV PANEL (Row 2, Col 1) */}
-            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
-              <AVPanel
-                partyId={party._id}
-                participants={participants}
-                onLeave={leaveRoom}
-                showLeaveButton={!isMobile}
-              />
+            {/* ================= LEFT BOTTOM — AV PANEL ================= */}
+            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-fit">
+              <div className="min-h-[200px]">
+                <AVPanel
+                  partyId={party._id}
+                  participants={participants}
+                  onLeave={leaveRoom}
+                  showLeaveButton={!isMobile}
+                />
+              </div>
             </div>
 
-            {/* RB — PARTICIPANTS (Row 2, Col 2) */}
-            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
+            {/* ================= RIGHT BOTTOM — PARTICIPANTS ================= */}
+            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-fit">
               <ParticipantList participants={participants} />
             </div>
           </div>
         </div>
       )}
 
-      {/* ====================== MOBILE LAYOUT (UNCHANGED) ====================== */}
+      {/* ======================== MOBILE (UNTOUCHED) ======================== */}
       {isMobile && (
         <>
-          {/* MAIN MEDIA PANEL ON MOBILE */}
           <div className="flex-1 min-h-0 flex flex-col">
             <div className="flex-1 min-h-0 pb-2">
               {view === "video" ? (
@@ -234,7 +221,6 @@ export default function PartyRoom() {
               )}
             </div>
 
-            {/* VIEW SWITCH + PARTY CODE */}
             <div className="flex flex-wrap gap-3 justify-center items-center px-3 py-2 border-t border-white/10 bg-white/10">
               <button
                 onClick={() => setView("video")}
@@ -275,7 +261,6 @@ export default function PartyRoom() {
             </div>
           </div>
 
-          {/* MOBILE WINDOW PANEL (AV / CHAT / PARTICIPANTS) */}
           <WindowPanel
             open={!!mobilePanel}
             onClose={() => setMobilePanel(null)}
@@ -299,7 +284,6 @@ export default function PartyRoom() {
             }
           />
 
-          {/* MOBILE TOOLBAR (with existing round leave button etc.) */}
           <MobileToolbar
             participantsCount={participants.length}
             onSelect={(key) => setMobilePanel(key)}
