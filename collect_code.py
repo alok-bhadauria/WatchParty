@@ -20,7 +20,7 @@ FILES_NEEDED = {
         "generatePartyCode.js", "responseHandler.js", "validators.js"
     ],
     "backend": [
-        ".env", "package.json", "server.js"
+        "package.json", "server.js"
     ],
     
 
@@ -46,7 +46,7 @@ FILES_NEEDED = {
         "App.jsx", "index.css", "main.jsx"
     ],
     "frontend": [
-        "index.html", "package.json", ".env"
+        "index.html", "package.json", "vite.config.js"
     ]
 }
 

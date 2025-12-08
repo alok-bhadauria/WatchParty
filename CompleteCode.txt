@@ -1576,13 +1576,6 @@ module.exports = { requiredFields };
 
 backend:
 
-.env
-PORT=5000
-MONGO_URI="mongodb+srv://alokwatchparty:watchparty3008@watchparty.wujklly.mongodb.net/watchparty?retryWrites=true&w=majority"
-JWT_SECRET="supersecretkey"
-CLIENT_URL="https://<your-frontend-domain>.onrender.com"
-
-
 package.json
 {
   "name": "watchparty-backend",
@@ -2147,12 +2140,8 @@ export default function AVPanel({ partyId, participants, onLeave, showLeaveButto
           {/* Self */}
           <div className="flex-1 flex flex-col min-w-0">
             <span className="text-xs text-gray-300 mb-1">You</span>
-            <div
-              className="
-                rounded-xl border border-white/20 bg-black/60
-                overflow-hidden flex-1
-              "
-            >
+
+            <div className="w-full aspect-video rounded-xl border border-white/20 bg-black/60 overflow-hidden">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -2166,12 +2155,8 @@ export default function AVPanel({ partyId, participants, onLeave, showLeaveButto
           {/* Remote */}
           <div className="flex-1 flex flex-col min-w-0">
             <span className="text-xs text-gray-300 mb-1">Remote</span>
-            <div
-              className="
-                rounded-xl border border-white/20 bg-black/60
-                overflow-hidden flex-1
-              "
-            >
+
+            <div className="w-full aspect-video rounded-xl border border-white/20 bg-black/60 overflow-hidden">
               <video
                 ref={remoteVideoRef}
                 autoPlay
@@ -2599,7 +2584,7 @@ export default function MobileToolbar({
 
 
 Navbar.jsx
-import { useContext, useState } from "react";
+import { useContext, useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 
@@ -2608,12 +2593,34 @@ export default function Navbar() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
+  // ===============================
+  // 🔥 SERVER STATUS SYSTEM
+  // ===============================
+  const [status, setStatus] = useState("Checking...");
+
+  const checkServer = async () => {
+    setStatus("Connecting...");
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL.replace("/api", "")}`);
+      if (res.ok) setStatus("Online");
+      else setStatus("Offline");
+    } catch {
+      setStatus("Offline");
+    }
+  };
+
+  useEffect(() => {
+    checkServer(); // auto-check on load
+  }, []);
+
   return (
-    <nav className="
+    <nav
+      className="
       fixed top-0 left-0 w-full z-50 px-6 py-2
       bg-white/10 backdrop-blur-xl border-b border-white/20
       flex items-center justify-between
-    ">
+    "
+    >
       {/* Logo */}
       <Link
         to="/"
@@ -2625,6 +2632,7 @@ export default function Navbar() {
 
       {/* Desktop menu */}
       <div className="hidden md:flex items-center gap-6">
+
         <Link
           to="/parties"
           className="
@@ -2678,6 +2686,23 @@ export default function Navbar() {
             >
               Logout
             </button>
+
+            <button
+              onClick={checkServer}
+              className={`
+                px-4 py-2 rounded-xl border transition
+                shadow-[0_0_10px_rgba(0,255,0,0.25)]
+                ${
+                  status === "Online"
+                    ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                    : status === "Connecting..."
+                    ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-300"
+                    : "bg-red-500/10 border-red-500/40 text-red-300"
+                }
+              `}
+            >
+          Server : {status}
+        </button>
           </>
         ) : (
           <>
@@ -2702,6 +2727,23 @@ export default function Navbar() {
             >
               Register
             </Link>
+
+            <button
+          onClick={checkServer}
+          className={`
+            px-4 py-2 rounded-xl border transition
+            shadow-[0_0_10px_rgba(0,255,0,0.25)]
+            ${
+              status === "Online"
+                ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                : status === "Connecting..."
+                ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-300"
+                : "bg-red-500/10 border-red-500/40 text-red-300"
+            }
+          `}
+        >
+          Server : {status}
+        </button>
           </>
         )}
       </div>
@@ -2716,15 +2758,17 @@ export default function Navbar() {
 
       {/* Mobile dropdown */}
       {open && (
-        <div className="
+        <div
+          className="
           absolute top-14 left-0 w-full px-6 py-4
           bg-[#0a0f1f]/95 backdrop-blur-xl border-t border-white/10
           flex flex-col gap-4 md:hidden
-        ">
+        "
+        >
           <Link
             to="/parties"
             onClick={() => setOpen(false)}
-            className="text-cyan-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+            className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-cyan-300 text-left"
           >
             Parties
           </Link>
@@ -2734,7 +2778,7 @@ export default function Navbar() {
               <Link
                 to="/profile"
                 onClick={() => setOpen(false)}
-                className="text-purple-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-purple-300 text-left"
               >
                 <i className="ri-user-3-line mr-2"></i>
                 {user.username}
@@ -2743,7 +2787,7 @@ export default function Navbar() {
               <Link
                 to="/feedback"
                 onClick={() => setOpen(false)}
-                className="text-emerald-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-emerald-300 text-left"
               >
                 Feedback
               </Link>
@@ -2753,7 +2797,7 @@ export default function Navbar() {
                   logout();
                   navigate("/login");
                 }}
-                className="text-red-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-red-300 text-left"
               >
                 Logout
               </button>
@@ -2763,19 +2807,38 @@ export default function Navbar() {
               <Link
                 to="/login"
                 onClick={() => setOpen(false)}
-                className="text-cyan-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-cyan-300 text-left"
               >
                 Login
               </Link>
               <Link
                 to="/register"
                 onClick={() => setOpen(false)}
-                className="text-purple-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-purple-300 text-left"
               >
                 Register
               </Link>
+              
             </>
           )}
+
+          {/* SERVER STATUS - MOBILE */}
+          <button
+            onClick={checkServer}
+            className={`
+              px-3 py-2 rounded-lg border text-left
+              ${
+                status === "Online"
+                  ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                  : status === "Connecting..."
+                  ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-300"
+                  : "bg-red-500/10 border-red-500/40 text-red-300"
+              }
+            `}
+          >
+            Server Status : {status}
+          </button>
+
         </div>
       )}
     </nav>
@@ -3229,7 +3292,9 @@ export default function Whiteboard({ partyId }) {
   const [color, setColor] = useState("cyan");
   const [lineWidth, setLineWidth] = useState(3);
 
-  // Initialize / resize canvas
+  // ========================
+  // CANVAS RESIZE + INIT
+  // ========================
   const resizeCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -3260,14 +3325,15 @@ export default function Whiteboard({ partyId }) {
     return () => window.removeEventListener("resize", resizeCanvas);
   }, []);
 
-  // When tool settings change, update ctx live
   useEffect(() => {
     if (!ctx) return;
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
   }, [color, lineWidth, ctx]);
 
-  // RECEIVE strokes + clear from server
+  // ========================
+  // SOCKET RECEIVERS
+  // ========================
   useEffect(() => {
     if (!socket || !ctx) return;
 
@@ -3298,7 +3364,9 @@ export default function Whiteboard({ partyId }) {
     };
   }, [socket, ctx]);
 
-  // Mouse helpers
+  // ========================
+  // MOUSE HELPERS
+  // ========================
   const getPos = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -3317,13 +3385,11 @@ export default function Whiteboard({ partyId }) {
     const prev = prevPosRef.current;
     const pos = getPos(e);
 
-    // local draw
     ctx.beginPath();
     ctx.moveTo(prev.x, prev.y);
     ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
 
-    // send to server
     socket.emit("whiteboard:draw", {
       partyId,
       stroke: {
@@ -3339,11 +3405,69 @@ export default function Whiteboard({ partyId }) {
     prevPosRef.current = pos;
   };
 
+  // ========================
+  // TOUCH SUPPORT
+  // ========================
+  const getTouchPos = (touchEvent) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const t = touchEvent.touches[0];
+    return {
+      x: t.clientX - rect.left,
+      y: t.clientY - rect.top,
+    };
+  };
+
+  const handleTouchStart = (e) => {
+    e.preventDefault();
+    const pos = getTouchPos(e);
+    setIsDrawing(true);
+    prevPosRef.current = pos;
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDrawing || !ctx) return;
+
+    e.preventDefault();
+
+    const prev = prevPosRef.current;
+    const pos = getTouchPos(e);
+
+    ctx.beginPath();
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+
+    socket.emit("whiteboard:draw", {
+      partyId,
+      stroke: {
+        prevX: prev.x,
+        prevY: prev.y,
+        x: pos.x,
+        y: pos.y,
+        color,
+        lineWidth,
+      },
+    });
+
+    prevPosRef.current = pos;
+  };
+
+  const handleTouchEnd = (e) => {
+    e.preventDefault();
+    setIsDrawing(false);
+  };
+
+  // ========================
+  // CLEAR
+  // ========================
   const clearBoard = () => {
     ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     socket.emit("whiteboard:clear", { partyId });
   };
 
+  // ========================
+  // UI
+  // ========================
   return (
     <div
       className="
@@ -3359,7 +3483,6 @@ export default function Whiteboard({ partyId }) {
         "
       >
         <div className="flex gap-3 items-center">
-          {/* COLORS */}
           <input
             type="color"
             value={color}
@@ -3367,7 +3490,6 @@ export default function Whiteboard({ partyId }) {
             className="w-10 h-8 rounded cursor-pointer"
           />
 
-          {/* BRUSH SIZE */}
           <select
             value={lineWidth}
             onChange={(e) => setLineWidth(Number(e.target.value))}
@@ -3384,7 +3506,6 @@ export default function Whiteboard({ partyId }) {
           </select>
         </div>
 
-        {/* CLEAR BUTTON */}
         <button
           onClick={clearBoard}
           className="
@@ -3399,7 +3520,7 @@ export default function Whiteboard({ partyId }) {
       {/* CANVAS AREA */}
       <div
         className="
-          w-full max-w-3xl aspect-video 
+          w-full max-w-3xl aspect-video
           rounded-xl border border-white/20 bg-white/5 backdrop-blur-xl
           overflow-hidden relative
         "
@@ -3410,7 +3531,13 @@ export default function Whiteboard({ partyId }) {
           onMouseUp={stopDrawing}
           onMouseLeave={stopDrawing}
           onMouseMove={draw}
-          className="w-full h-full"
+
+          /* TOUCH EVENTS */
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+
+          className="w-full h-full touch-none"
         />
       </div>
     </div>
@@ -3939,55 +4066,81 @@ export default function FeedbackPage() {
 
 
 Home.jsx
+import { Link } from "react-router-dom";
+
 export default function Home() {
   return (
-    <div className="
+    <div
+      className="
       min-h-screen text-white
       bg-gradient-to-br from-[#050505] via-[#0a0f1f] to-[#1b0f2f]
       flex flex-col items-center pt-28 px-6
-    ">
+    "
+    >
       {/* HERO SECTION */}
-      <h1 className="
+      <h1
+        className="
         text-5xl md:text-7xl font-extrabold text-center
         text-transparent bg-clip-text 
         bg-gradient-to-r from-cyan-400 to-purple-500
         drop-shadow-[0_0_25px_rgba(0,200,255,0.4)]
         leading-tight
-      ">
+      "
+      >
         Watch Together.
         <br />
         Learn. Share. Enjoy.
       </h1>
 
       <p className="text-lg md:text-xl text-gray-300 mt-6 max-w-2xl text-center">
-        Sync videos, share screens, collaborate on whiteboards, chat in real-time — 
-        experience movies, study sessions, and events together from anywhere.
+        Sync videos, share screens, collaborate on whiteboards, chat in
+        real-time — experience movies, study sessions, and events together from
+        anywhere.
       </p>
 
-      <div className="mt-10 flex gap-4">
-        <a
-          href="/login"
+      {/* BUTTON ROW */}
+      <div className="mt-10 flex flex-wrap gap-4 justify-center">
+        <Link
+          to="/login"
           className="
             px-8 py-3 rounded-2xl text-lg
             bg-cyan-500/20 border border-cyan-500/40
             text-cyan-300 hover:bg-cyan-500/30 transition
             shadow-[0_0_20px_rgba(0,255,255,0.3)]
+            flex items-center gap-2
           "
         >
-          Get Started →
-        </a>
+          <i className="ri-login-circle-line text-xl" />
+          Login
+        </Link>
 
-        <a
-          href="/register"
+        <Link
+          to="/register"
           className="
             px-8 py-3 rounded-2xl text-lg
             bg-purple-600/20 border border-purple-500/40
             text-purple-200 hover:bg-purple-600/30 transition
             shadow-[0_0_20px_rgba(180,0,255,0.3)]
+            flex items-center gap-2
           "
         >
-          Create Account
-        </a>
+          <i className="ri-user-add-line text-xl" />
+          Get Started →
+        </Link>
+
+        <Link
+          to="/parties"
+          className="
+            px-8 py-3 rounded-2xl text-lg
+            bg-emerald-600/20 border border-emerald-500/40
+            text-emerald-200 hover:bg-emerald-600/30 transition
+            shadow-[0_0_20px_rgba(0,255,127,0.3)]
+            flex items-center gap-2
+          "
+        >
+          <i className="ri-community-line text-xl" />
+          See Active Parties
+        </Link>
       </div>
 
       {/* FEATURES SECTION */}
@@ -4024,9 +4177,273 @@ export default function Home() {
         ))}
       </div>
 
-      {/* FOOTER */}
-      <footer className="mt-24 mb-10 text-gray-400 text-sm">
-        © {new Date().getFullYear()} WatchParty — A project idea by Alok Bhadauria
+      {/* WHY SECTION */}
+      <div className="mt-32 max-w-4xl text-center">
+        <h2 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 mb-6">
+          Why WatchParty?
+        </h2>
+
+        <p className="text-gray-300 text-lg leading-relaxed">
+          Whether you're watching movies with friends, doing online study
+          sessions, conducting workshops, or collaborating remotely — WatchParty
+          gives you everything you need in one beautifully simple platform.
+        </p>
+      </div>
+
+      {/* HOW IT WORKS */}
+      <div className="mt-20 max-w-5xl grid md:grid-cols-4 gap-8">
+        {[
+          {
+            step: "1",
+            title: "Create a Party",
+            desc: "Start a room instantly — no downloads, no setup.",
+          },
+          {
+            step: "2",
+            title: "Invite Friends",
+            desc: "Share the party code. Anyone can join instantly!",
+          },
+          {
+            step: "3",
+            title: "Watch & Collaborate",
+            desc: "Sync video, chat, whiteboard & media together.",
+          },
+          {
+            step: "4",
+            title: "Private Rooms",
+            desc: "Password-protected rooms for secure sessions.",
+          },
+        ].map((box, i) => (
+          <div
+            key={i}
+            className="
+              p-6 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-xl
+              flex flex-col items-center gap-4 text-center
+            "
+          >
+            <div className="w-12 h-12 rounded-full bg-purple-500/30 border border-purple-500/40 flex items-center justify-center text-xl font-bold text-purple-200">
+              {box.step}
+            </div>
+            <h3 className="text-lg font-semibold">{box.title}</h3>
+            <p className="text-gray-300 text-sm">{box.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* TECH STACK SECTION */}
+      <div className="mt-32 max-w-6xl">
+        <h2 className="text-3xl font-bold text-center text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 mb-10">
+          Built With Modern Web Tech
+        </h2>
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+          {[
+            {
+              icon: "ri-reactjs-line",
+              label: "React",
+              desc: "Fast component-driven UI powering the frontend.",
+            },
+            {
+              icon: "ri-tailwind-css-line",
+              label: "TailwindCSS",
+              desc: "Utility-first styling with beautiful effects.",
+            },
+            {
+              icon: "ri-nodejs-line",
+              label: "Node.js",
+              desc: "Backend runtime enabling JavaScript everywhere.",
+            },
+            {
+              icon: "ri-server-line",
+              label: "Express",
+              desc: "Fast & minimal server powering all APIs.",
+            },
+            {
+              icon: "ri-database-2-line",
+              label: "MongoDB",
+              desc: "Cloud database for parties, chat & user data.",
+            },
+            {
+              icon: "ri-cloud-windy-line",
+              label: "Socket.IO",
+              desc: "Real-time sync for chat, whiteboard & events.",
+            },
+            {
+              icon: "ri-live-line",
+              label: "WebRTC",
+              desc: "Peer-to-peer AV streaming for calls.",
+            },
+            {
+              icon: "ri-remixicon-line",
+              label: "Remix Icons",
+              desc: "Modern icons used across the interface.",
+            },
+            {
+              icon: "ri-terminal-window-line",
+              label: "Render",
+              desc: "Deployment hosting for backend & frontend.",
+            },
+            {
+              icon: "ri-github-line",
+              label: "GitHub",
+              desc: "Version control & collaboration platform.",
+            },
+          ].map((tech, i) => (
+            <div
+              key={i}
+              className="
+                flex flex-col items-center p-4 rounded-2xl
+                bg-white/10 border border-white/20 backdrop-blur-xl
+                hover:bg-white/15 transition text-center
+              "
+            >
+              <i className={`${tech.icon} text-4xl text-cyan-300`} />
+              <p className="text-gray-300 text-sm mt-2 font-semibold">
+                {tech.label}
+              </p>
+              <p className="text-gray-400 text-xs mt-1">{tech.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ========================= FOOTER ========================= */}
+      <footer className="mt-32 mb-10 w-full max-w-6xl text-gray-300 text-sm">
+
+        {/* Top full-width divider */}
+        <div className="w-full h-px bg-white/10 mb-10"></div>
+
+        {/* GRID WRAPPER (desktop) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-y-16 gap-x-10">
+
+          {/* ---------- ROW 1 (merged 1A + 1B) ---------- */}
+          <div className="md:col-span-2 text-center max-w-3xl mx-auto">
+            <p className="leading-relaxed">
+              WatchParty is a modern real-time collaboration platform designed
+              for friends, students, creators, and remote teams. Enjoy synced
+              video playback, chat, whiteboard, AV calling, screen sharing and
+              powerful room controls — all inside a beautifully crafted
+              experience.
+            </p>
+            <div className="w-full h-px bg-white/10 mt-6"></div>
+          </div>
+
+          {/* ====================== ROW 2A — Feedback ====================== */}
+          <div className="flex flex-col justify-between">
+            <div>
+              <h3 className="text-white font-semibold mb-2">
+                We would love to hear from you
+              </h3>
+              <p className="text-gray-400 mb-3">
+                Feedback / Suggestions / Queries / Reports
+              </p>
+
+              <Link
+                to="/feedback"
+                className="text-emerald-300 hover:text-emerald-400 text-xl px-2"
+              >
+                <i className="ri-feedback-line" />
+              </Link>
+
+              <Link
+                to="/feedback"
+                className="text-emerald-300 underline hover:text-emerald-400"
+              >
+                Give Feedback
+              </Link>
+            </div>
+
+            <div className="w-full h-px bg-white/10 mt-6"></div>
+          </div>
+
+          {/* ====================== ROW 2B — GitHub Repository ====================== */}
+          <div className="flex flex-col justify-between">
+            <div>
+              <h3 className="text-white font-semibold mb-2">
+                GitHub Repository
+              </h3>
+              <p className="text-gray-400 mb-3">
+                Complete source code for WatchParty available on GitHub.
+              </p>
+
+              <a
+                href="https://github.com/alok-bhadauria/WatchParty"
+                className="text-cyan-300 hover:text-cyan-400 text-xl px-2"
+              >
+                <i className="ri-github-line" />
+              </a>
+              <a
+                href="https://github.com/alok-bhadauria/WatchParty"
+                className="text-cyan-300 underline hover:text-cyan-400"
+              >
+                Click here to visit the repository
+              </a>
+            </div>
+
+            <div className="w-full h-px bg-white/10 mt-6"></div>
+          </div>
+
+          {/* ====================== ROW 3A — Project Highlights ====================== */}
+          <div className="flex flex-col justify-between">
+            <div>
+              <h3 className="text-white font-semibold mb-3">Project Highlights</h3>
+              <p className="text-gray-400 text-sm">
+                Real-time sync engine, custom whiteboard transport, secure
+                WebRTC-based AV pipeline, responsive UI, and optimized mobile
+                experience — built with performance & simplicity in mind.
+              </p>
+            </div>
+            <div className="w-full h-px bg-white/10 mt-6"></div>
+          </div>
+
+          {/* ====================== ROW 3B — Socials ====================== */}
+          <div className="flex flex-col justify-between">
+            <div>
+              <h3 className="text-white font-semibold mb-3">
+                Let's connect and build together
+              </h3>
+              <div className="flex gap-6 text-xl">
+                <a
+                  href="https://www.linkedin.com/in/alok-bhadauria/"
+                  className="text-blue-400 hover:text-blue-500"
+                >
+                  <i className="ri-linkedin-box-line" />
+                </a>
+                <a
+                  href="https://discord.gg/"
+                  className="text-cyan-300 hover:text-cyan-400"
+                >
+                  <i className="ri-discord-line" />
+                </a>
+                <a
+                  href="https://instagram.com/"
+                  className="text-pink-400 hover:text-pink-500"
+                >
+                  <i className="ri-instagram-line" />
+                </a>
+              </div>
+            </div>
+
+            <div className="w-full h-px bg-white/10 mt-6"></div>
+          </div>
+
+          {/* ---------- ROW 4 (merged About + Credit) ---------- */}
+          <div className="md:col-span-2 text-center max-w-3xl mx-auto">
+            <h3 className="text-white font-semibold mb-2">About Me</h3>
+            <p className="text-gray-400 leading-relaxed">
+              I'm Alok Bhadauria, a passionate developer crafting meaningful
+              web apps, open-source tools and AI-driven experiences. Currently
+              pursuing B.Tech in Computer Science (AI/ML & IoT), I love building,
+              experimenting and creating digital experiences that feel alive.
+            </p>
+
+            <p className="mt-8 text-gray-500">
+              Designed & Built by <span className="text-white">Alok Bhadauria</span>
+            </p>
+
+            <div className="w-full h-px bg-white/10 mt-6"></div>
+          </div>
+        </div>
       </footer>
     </div>
   );
@@ -4292,18 +4709,15 @@ export default function PartyRoom() {
   const party = state?.party;
   const participant = state?.participant;
 
-  // This will hold the participant document returned by the backend (with _id)
   const [dbParticipant, setDbParticipant] = useState(null);
-
   const [participants, setParticipants] = useState([]);
-  const [view, setView] = useState("video"); // "video" | "whiteboard"
-  const [mobilePanel, setMobilePanel] = useState("chat"); // "av" | "chat" | "participants"
+  const [view, setView] = useState("video");
+  const [mobilePanel, setMobilePanel] = useState("chat");
 
   const isMobile =
     typeof window !== "undefined" ? window.innerWidth < 768 : false;
 
-
-  // Ensure we have a participant document in DB (with _id)
+  // Join backend participant record
   useEffect(() => {
     if (!party || !participant) {
       navigate("/parties");
@@ -4321,9 +4735,7 @@ export default function PartyRoom() {
           isAnonymous: participant.isAnonymous ?? true,
         });
 
-        if (!cancelled) {
-          setDbParticipant(res.data.participant); // has _id
-        }
+        if (!cancelled) setDbParticipant(res.data.participant);
       } catch (err) {
         toast.error("Could not join party");
         navigate("/parties");
@@ -4335,11 +4747,9 @@ export default function PartyRoom() {
     };
   }, [party, participant, navigate]);
 
-
-  // JOIN ROOM + LISTEN (Socket) — after we have dbParticipant from backend
+  // Socket join
   useEffect(() => {
-    if (!party || !dbParticipant) return;
-    if (!socket) return;
+    if (!party || !dbParticipant || !socket) return;
 
     socket.emit("join-room", {
       partyId: party._id,
@@ -4360,17 +4770,13 @@ export default function PartyRoom() {
       });
 
       leaveParticipant(dbParticipant._id).catch(() => {});
-
       socket.off("participants-update", handleParticipants);
     };
   }, [socket, party, dbParticipant]);
 
-
   const leaveRoom = async () => {
     try {
-      if (dbParticipant?._id) {
-        await leaveParticipant(dbParticipant._id);
-      }
+      if (dbParticipant?._id) await leaveParticipant(dbParticipant._id);
     } catch {}
     toast("You left the party");
     navigate("/parties");
@@ -4395,23 +4801,21 @@ export default function PartyRoom() {
 
   return (
     <div className="min-h-screen flex flex-col text-white bg-gradient-to-br from-[#000] via-[#0a0f1f] to-[#1b0f2f] pt-15">
-      {/* ====================== DESKTOP LAYOUT (NEW GRID) ====================== */}
+      
+      {/* ======================== DESKTOP (SCROLLABLE LAYOUT) ======================== */}
       {!isMobile && (
-        // OUTER WRAPPER: fixed height relative to viewport, like WindowPanel
-        <div className="hidden md:block flex-1 min-h-0 px-4 pb-4 pt-3">
+        <div className="hidden md:block flex-1 px-4 pb-4 pt-3 overflow-y-auto">
           <div
             className="
-              h-[calc(100vh-5rem)]  /* adjust this if you want more/less space under navbar */
-              min-h-0
               grid gap-4
-              grid-cols-[2fr_1fr]   /* Left 2/3, Right 1/3 */
-              grid-rows-[1.2fr_0.8fr]   /* Top and Bottom equal height */
+              grid-cols-[2fr_1fr]
+              auto-rows-max
             "
           >
-            {/* LT — MEDIA (Row 1, Col 1) */}
-            <div className="rounded-2xl bg-white/5 border border-white/15 backdrop-blur-xl flex flex-col overflow-hidden">
-              {/* Media Area */}
-              <div className="flex-1 min-h-0 relative overflow-hidden pb-10">
+            {/* ================= LEFT TOP — MEDIA ================= */}
+            <div className="rounded-2xl bg-white/5 border border-white/15 backdrop-blur-xl flex flex-col min-h-fit overflow-hidden">
+              
+              <div className="flex-1 min-h-fit relative overflow-hidden pb-10">
                 {view === "video" ? (
                   <VideoPlayer party={party} participant={dbParticipant} />
                 ) : (
@@ -4419,7 +4823,6 @@ export default function PartyRoom() {
                 )}
               </div>
 
-              {/* Video / Whiteboard / Code buttons */}
               <div className="flex flex-wrap gap-3 justify-center items-center px-4 py-2 border-t border-white/10 bg-white/10">
                 <button
                   onClick={() => setView("video")}
@@ -4455,15 +4858,13 @@ export default function PartyRoom() {
                 >
                   <i className="ri-key-2-line" />
                   <span className="hidden sm:inline">Room Code:</span>
-                  <span className="font-mono text-xs sm:text-sm">
-                    {party.code}
-                  </span>
+                  <span className="font-mono text-xs sm:text-sm">{party.code}</span>
                 </button>
               </div>
             </div>
 
-            {/* RT — CHAT (Row 1, Col 2) */}
-            <div className="rounded-2xl flex flex-col overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
+            {/* ================= RIGHT TOP — CHAT ================= */}
+            <div className="rounded-2xl flex flex-col overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-fit">
               <ChatBox
                 partyId={party._id}
                 participant={dbParticipant}
@@ -4471,28 +4872,29 @@ export default function PartyRoom() {
               />
             </div>
 
-            {/* LB — AV PANEL (Row 2, Col 1) */}
-            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
-              <AVPanel
-                partyId={party._id}
-                participants={participants}
-                onLeave={leaveRoom}
-                showLeaveButton={!isMobile}
-              />
+            {/* ================= LEFT BOTTOM — AV PANEL ================= */}
+            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-fit">
+              <div className="min-h-[200px]">
+                <AVPanel
+                  partyId={party._id}
+                  participants={participants}
+                  onLeave={leaveRoom}
+                  showLeaveButton={!isMobile}
+                />
+              </div>
             </div>
 
-            {/* RB — PARTICIPANTS (Row 2, Col 2) */}
-            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-0">
+            {/* ================= RIGHT BOTTOM — PARTICIPANTS ================= */}
+            <div className="rounded-2xl overflow-hidden bg-white/5 border border-white/15 backdrop-blur-xl min-h-fit">
               <ParticipantList participants={participants} />
             </div>
           </div>
         </div>
       )}
 
-      {/* ====================== MOBILE LAYOUT (UNCHANGED) ====================== */}
+      {/* ======================== MOBILE (UNTOUCHED) ======================== */}
       {isMobile && (
         <>
-          {/* MAIN MEDIA PANEL ON MOBILE */}
           <div className="flex-1 min-h-0 flex flex-col">
             <div className="flex-1 min-h-0 pb-2">
               {view === "video" ? (
@@ -4502,7 +4904,6 @@ export default function PartyRoom() {
               )}
             </div>
 
-            {/* VIEW SWITCH + PARTY CODE */}
             <div className="flex flex-wrap gap-3 justify-center items-center px-3 py-2 border-t border-white/10 bg-white/10">
               <button
                 onClick={() => setView("video")}
@@ -4543,7 +4944,6 @@ export default function PartyRoom() {
             </div>
           </div>
 
-          {/* MOBILE WINDOW PANEL (AV / CHAT / PARTICIPANTS) */}
           <WindowPanel
             open={!!mobilePanel}
             onClose={() => setMobilePanel(null)}
@@ -4567,7 +4967,6 @@ export default function PartyRoom() {
             }
           />
 
-          {/* MOBILE TOOLBAR (with existing round leave button etc.) */}
           <MobileToolbar
             participantsCount={participants.length}
             onSelect={(key) => setMobilePanel(key)}
@@ -5352,10 +5751,8 @@ index.html
     <title>WatchParty</title>
 
     <!-- Remix Icons -->
-    <link
-      href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css"
-      rel="stylesheet"
-    />
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.7.0/fonts/remixicon.css" rel="stylesheet">
+
   </head>
 
   <body>
@@ -5387,6 +5784,7 @@ package.json
     "react-dom": "^19.2.0",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.10.1",
+    "remixicon": "^4.7.0",
     "socket.io-client": "^4.8.1",
     "tailwindcss": "^4.1.17",
     "zustand": "^5.0.9"
@@ -5406,9 +5804,17 @@ package.json
 
 
 
-.env
-VITE_API_URL="https://your-backend.onrender.com/api"
-VITE_SOCKET_URL="https://your-backend.onrender.com"
+vite.config.js
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+})
 
 
 
