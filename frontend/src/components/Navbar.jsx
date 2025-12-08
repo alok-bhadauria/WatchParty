@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 
@@ -7,12 +7,34 @@ export default function Navbar() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
+  // ===============================
+  // 🔥 SERVER STATUS SYSTEM
+  // ===============================
+  const [status, setStatus] = useState("Checking...");
+
+  const checkServer = async () => {
+    setStatus("Connecting...");
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL.replace("/api", "")}`);
+      if (res.ok) setStatus("Online");
+      else setStatus("Offline");
+    } catch {
+      setStatus("Offline");
+    }
+  };
+
+  useEffect(() => {
+    checkServer(); // auto-check on load
+  }, []);
+
   return (
-    <nav className="
+    <nav
+      className="
       fixed top-0 left-0 w-full z-50 px-6 py-2
       bg-white/10 backdrop-blur-xl border-b border-white/20
       flex items-center justify-between
-    ">
+    "
+    >
       {/* Logo */}
       <Link
         to="/"
@@ -24,6 +46,7 @@ export default function Navbar() {
 
       {/* Desktop menu */}
       <div className="hidden md:flex items-center gap-6">
+
         <Link
           to="/parties"
           className="
@@ -77,6 +100,23 @@ export default function Navbar() {
             >
               Logout
             </button>
+
+            <button
+              onClick={checkServer}
+              className={`
+                px-4 py-2 rounded-xl border transition
+                shadow-[0_0_10px_rgba(0,255,0,0.25)]
+                ${
+                  status === "Online"
+                    ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                    : status === "Connecting..."
+                    ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-300"
+                    : "bg-red-500/10 border-red-500/40 text-red-300"
+                }
+              `}
+            >
+          Server : {status}
+        </button>
           </>
         ) : (
           <>
@@ -101,6 +141,23 @@ export default function Navbar() {
             >
               Register
             </Link>
+
+            <button
+          onClick={checkServer}
+          className={`
+            px-4 py-2 rounded-xl border transition
+            shadow-[0_0_10px_rgba(0,255,0,0.25)]
+            ${
+              status === "Online"
+                ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                : status === "Connecting..."
+                ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-300"
+                : "bg-red-500/10 border-red-500/40 text-red-300"
+            }
+          `}
+        >
+          Server : {status}
+        </button>
           </>
         )}
       </div>
@@ -115,15 +172,17 @@ export default function Navbar() {
 
       {/* Mobile dropdown */}
       {open && (
-        <div className="
+        <div
+          className="
           absolute top-14 left-0 w-full px-6 py-4
           bg-[#0a0f1f]/95 backdrop-blur-xl border-t border-white/10
           flex flex-col gap-4 md:hidden
-        ">
+        "
+        >
           <Link
             to="/parties"
             onClick={() => setOpen(false)}
-            className="text-cyan-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+            className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-cyan-300 text-left"
           >
             Parties
           </Link>
@@ -133,7 +192,7 @@ export default function Navbar() {
               <Link
                 to="/profile"
                 onClick={() => setOpen(false)}
-                className="text-purple-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-purple-300 text-left"
               >
                 <i className="ri-user-3-line mr-2"></i>
                 {user.username}
@@ -142,7 +201,7 @@ export default function Navbar() {
               <Link
                 to="/feedback"
                 onClick={() => setOpen(false)}
-                className="text-emerald-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-emerald-300 text-left"
               >
                 Feedback
               </Link>
@@ -152,7 +211,7 @@ export default function Navbar() {
                   logout();
                   navigate("/login");
                 }}
-                className="text-red-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-red-300 text-left"
               >
                 Logout
               </button>
@@ -162,19 +221,38 @@ export default function Navbar() {
               <Link
                 to="/login"
                 onClick={() => setOpen(false)}
-                className="text-cyan-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-cyan-300 text-left"
               >
                 Login
               </Link>
               <Link
                 to="/register"
                 onClick={() => setOpen(false)}
-                className="text-purple-300 px-3 py-2 rounded-lg bg-white/10 border border-white/20"
+                className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-purple-300 text-left"
               >
                 Register
               </Link>
+              
             </>
           )}
+
+          {/* SERVER STATUS - MOBILE */}
+          <button
+            onClick={checkServer}
+            className={`
+              px-3 py-2 rounded-lg border text-left
+              ${
+                status === "Online"
+                  ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                  : status === "Connecting..."
+                  ? "bg-yellow-500/10 border-yellow-500/40 text-yellow-300"
+                  : "bg-red-500/10 border-red-500/40 text-red-300"
+              }
+            `}
+          >
+            Server Status : {status}
+          </button>
+
         </div>
       )}
     </nav>
