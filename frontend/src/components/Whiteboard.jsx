@@ -14,7 +14,9 @@ export default function Whiteboard({ partyId }) {
   const [color, setColor] = useState("cyan");
   const [lineWidth, setLineWidth] = useState(3);
 
-  // Initialize / resize canvas
+  // ========================
+  // CANVAS RESIZE + INIT
+  // ========================
   const resizeCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -45,14 +47,15 @@ export default function Whiteboard({ partyId }) {
     return () => window.removeEventListener("resize", resizeCanvas);
   }, []);
 
-  // When tool settings change, update ctx live
   useEffect(() => {
     if (!ctx) return;
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
   }, [color, lineWidth, ctx]);
 
-  // RECEIVE strokes + clear from server
+  // ========================
+  // SOCKET RECEIVERS
+  // ========================
   useEffect(() => {
     if (!socket || !ctx) return;
 
@@ -83,7 +86,9 @@ export default function Whiteboard({ partyId }) {
     };
   }, [socket, ctx]);
 
-  // Mouse helpers
+  // ========================
+  // MOUSE HELPERS
+  // ========================
   const getPos = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -102,13 +107,11 @@ export default function Whiteboard({ partyId }) {
     const prev = prevPosRef.current;
     const pos = getPos(e);
 
-    // local draw
     ctx.beginPath();
     ctx.moveTo(prev.x, prev.y);
     ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
 
-    // send to server
     socket.emit("whiteboard:draw", {
       partyId,
       stroke: {
@@ -124,11 +127,69 @@ export default function Whiteboard({ partyId }) {
     prevPosRef.current = pos;
   };
 
+  // ========================
+  // TOUCH SUPPORT
+  // ========================
+  const getTouchPos = (touchEvent) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const t = touchEvent.touches[0];
+    return {
+      x: t.clientX - rect.left,
+      y: t.clientY - rect.top,
+    };
+  };
+
+  const handleTouchStart = (e) => {
+    e.preventDefault();
+    const pos = getTouchPos(e);
+    setIsDrawing(true);
+    prevPosRef.current = pos;
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDrawing || !ctx) return;
+
+    e.preventDefault();
+
+    const prev = prevPosRef.current;
+    const pos = getTouchPos(e);
+
+    ctx.beginPath();
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+
+    socket.emit("whiteboard:draw", {
+      partyId,
+      stroke: {
+        prevX: prev.x,
+        prevY: prev.y,
+        x: pos.x,
+        y: pos.y,
+        color,
+        lineWidth,
+      },
+    });
+
+    prevPosRef.current = pos;
+  };
+
+  const handleTouchEnd = (e) => {
+    e.preventDefault();
+    setIsDrawing(false);
+  };
+
+  // ========================
+  // CLEAR
+  // ========================
   const clearBoard = () => {
     ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     socket.emit("whiteboard:clear", { partyId });
   };
 
+  // ========================
+  // UI
+  // ========================
   return (
     <div
       className="
@@ -144,7 +205,6 @@ export default function Whiteboard({ partyId }) {
         "
       >
         <div className="flex gap-3 items-center">
-          {/* COLORS */}
           <input
             type="color"
             value={color}
@@ -152,7 +212,6 @@ export default function Whiteboard({ partyId }) {
             className="w-10 h-8 rounded cursor-pointer"
           />
 
-          {/* BRUSH SIZE */}
           <select
             value={lineWidth}
             onChange={(e) => setLineWidth(Number(e.target.value))}
@@ -169,7 +228,6 @@ export default function Whiteboard({ partyId }) {
           </select>
         </div>
 
-        {/* CLEAR BUTTON */}
         <button
           onClick={clearBoard}
           className="
@@ -184,7 +242,7 @@ export default function Whiteboard({ partyId }) {
       {/* CANVAS AREA */}
       <div
         className="
-          w-full max-w-3xl aspect-video 
+          w-full max-w-3xl aspect-video
           rounded-xl border border-white/20 bg-white/5 backdrop-blur-xl
           overflow-hidden relative
         "
@@ -195,7 +253,13 @@ export default function Whiteboard({ partyId }) {
           onMouseUp={stopDrawing}
           onMouseLeave={stopDrawing}
           onMouseMove={draw}
-          className="w-full h-full"
+
+          /* TOUCH EVENTS */
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+
+          className="w-full h-full touch-none"
         />
       </div>
     </div>
