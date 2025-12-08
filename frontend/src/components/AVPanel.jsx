@@ -257,12 +257,8 @@ export default function AVPanel({ partyId, participants, onLeave, showLeaveButto
           {/* Self */}
           <div className="flex-1 flex flex-col min-w-0">
             <span className="text-xs text-gray-300 mb-1">You</span>
-            <div
-              className="
-                rounded-xl border border-white/20 bg-black/60
-                overflow-hidden flex-1
-              "
-            >
+
+            <div className="w-full aspect-video rounded-xl border border-white/20 bg-black/60 overflow-hidden">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -276,12 +272,8 @@ export default function AVPanel({ partyId, participants, onLeave, showLeaveButto
           {/* Remote */}
           <div className="flex-1 flex flex-col min-w-0">
             <span className="text-xs text-gray-300 mb-1">Remote</span>
-            <div
-              className="
-                rounded-xl border border-white/20 bg-black/60
-                overflow-hidden flex-1
-              "
-            >
+
+            <div className="w-full aspect-video rounded-xl border border-white/20 bg-black/60 overflow-hidden">
               <video
                 ref={remoteVideoRef}
                 autoPlay

@@ -124,9 +124,7 @@ export default function PartyRoom() {
             className="
               grid gap-4
               grid-cols-[2fr_1fr]
-              grid-rows-[1.2fr_0.8fr]
               auto-rows-max
-              min-h-fit
             "
           >
             {/* ================= LEFT TOP — MEDIA ================= */}
